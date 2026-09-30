@@ -4,6 +4,7 @@
 #include "cluster.h"
 #include "util.h"
 #include "debug.h"
+
 #include <cassert>
 #include <random>
 #include <time.h>
@@ -988,7 +989,7 @@ len_t Segment_scheme::search_best_batch(lid_t start, lid_t end, SchNode::SchCost
     return best_batch_size;
 }
 
-Segment_scheme* DP_search(int iter_num, bool base,bool fast_mode) {
+Segment_scheme* DP_search(int iter_num, bool base,bool fast_mode, bool use_TL_val) {
     time_t start_time = time(nullptr);
     lid_t layer_num = network->len();
     len_t current_batch;
@@ -1110,5 +1111,22 @@ Segment_scheme* DP_search(int iter_num, bool base,bool fast_mode) {
     std::cout << std::endl << "Cost (after SPM search): " << std::endl << iter->schtree_spm->get_cost() << std::endl;
     std::cout << std::endl << std::endl;
     iter->schtree_spm->write_energy_record();
+
+
+    ///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+    if(use_TL_val){
+        iter->schtree_spm->set_TL_usage(true);
+        builded = iter->build_SchTree(true);
+
+        std::cout << "TL inference:" << std::endl;
+        iter->schtree_spm->print_struct("\t");
+        std::cout << std::endl << "Cost (after TL inference): " << std::endl << iter->schtree_spm->get_cost() << std::endl;
+        std::cout << std::endl << std::endl;
+    }
+    ///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+
     return iter;
+
+
+
 }

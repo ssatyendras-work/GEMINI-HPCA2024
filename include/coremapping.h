@@ -7,6 +7,13 @@
 #include "layer.h"
 #include "util.h"
 
+
+#include <iostream>
+#include <vector>
+#include <memory>
+#include "xgboost/c_api.h"
+
+
 struct PartSch;
 //#include "partition.h"
 
@@ -58,6 +65,40 @@ struct PartSch;
  *
  */
 
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+class xgb_extractor {
+public:
+	xgb_extractor(const std::string& model_path);
+	std::vector<float> extract(DMatrixHandle dmat);
+private:
+	BoosterHandle booster;
+	int n_trees;
+};
+
+class nn_predictor {
+public:
+	nn_predictor(const std::string& weight_prefix, int input_dim, int hidden_dim, int output_dim, int n_leafs);
+	std::vector<float> predict(const std::vector<float>& input);
+private:
+	int input_dim, hidden_dim, output_dim, n_leafs;
+	std::vector<float> W1, b1, W2, b2;
+	void load_weights(const std::string& file, std::vector<float>& vec, int expected_size);
+};
+	
+class TL_predictors {
+public:
+	TL_predictors(const std::string& model_dir);
+	void run_predictions(const std::vector<float>& core_feature, std::vector<float>& results);
+private:
+	std::unique_ptr<xgb_extractor> xgb;
+	std::unique_ptr<nn_predictor> nn;
+	std::vector<float> output_bias;
+	void load_bias(const std::string& bias_path, std::vector<float>& bias, int expected_size);
+};
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+	
+	
+
 class CoreMapper{
 public:
 	typedef ConvLayer::Workload ConvParent;
@@ -86,7 +127,16 @@ public:
 	};
 	// Base core
 	const Core& base_core;
+
 	CoreMapper(const Core& c);
+	///////////////////////////////////////////////////////////// Addiing performance predictors ///////////////////////////////////////////////////////////
+	void setting_predictor_usage(const std::vector<std::string>& model_paths);
+	/////////////////////////////////////////////////////////////// Addiing performance predictors ///////////////////////////////////////////////////////////
+
+	///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+	void setting_TL_usage(bool use){use_TL=use;};
+	void setting_TL_path(std::string working_path){TL_workpath=working_path;};
+	///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
 	CoreMapping genLayerMap(const Layer& layer, const PartSch& part, const FetchSch& fetch, len_t batch_size, bool wgtB);
 	virtual CoreMapping genMapping(const ConvWl& wl) = 0;
 	const Core& core() const;
@@ -95,6 +145,13 @@ public:
 	virtual void set_lr_utime(LRLayer& l) const;
 	virtual vol_t get_ubuf_size() const = 0;
 	virtual ~CoreMapper() = default;
+/////////////////////////////////////////////////////////////// Addiing performance predictors ///////////////////////////////////////////////////////////
+protected:
+	static std::vector<std::unique_ptr<TL_predictors>> predictors_set;
+	bool use_predictor = false;
+	bool use_TL = false;
+	std::string TL_workpath;
+/////////////////////////////////////////////////////////////// Addiing performance predictors ///////////////////////////////////////////////////////////
 };
 
 class PolarMapper: public CoreMapper{
@@ -149,9 +206,19 @@ class PolarMapper: public CoreMapper{
 		// MapCost allcst, hasl2;
 		void getCost(const ConvWl& wl);
 		//void _try_print(const Workload& wl, size_t i);
+		///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
+		void write_TL_hyperparams(const ConvWl& wl, const std::string working_path);
+		CoreMapping read_TL_cost(const ConvWl& wl, const std::string working_path);
+		///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
+		///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+		std::vector<float> gen_predictor_input(const ConvWl& wl, const Core& c);	
+		///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 	public:
 		Instance(const PolarCore& _core);
-		CoreMapping genMapping(const ConvWl& wl);
+		///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
+		CoreMapping genMapping(const ConvWl& w, bool use_predictor, bool use_TL, const std::string TL_workpath);
+		// CoreMapping genMapping(const ConvWl& wl);
+		///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
 	};
 	const PolarCore& core;
 public:
@@ -189,10 +256,23 @@ class EyerissMapper : public CoreMapper {
 
 		const EyerissCore& core;
 		void getCost(const ConvWl& wl);
+		// file generator for Timeloop, including problem, mapper, and architecture.
+		void genTlFiles(const ConvWl& wl);
+
+		///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+		void write_TL_hyperparams(const ConvWl& wl, const std::string working_path);
+		CoreMapping read_TL_cost(const ConvWl& wl, const std::string working_path);
+		///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+		///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+		std::vector<float> gen_predictor_input(const ConvWl& wl, const Core& c);	
+		///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 	public:
 		Instance(const EyerissCore& _core);
-		CoreMapping genMapping(const ConvWl& wl);
-	};
+		///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+		CoreMapping genMapping(const ConvWl& w, bool use_predictor, bool use_TL, const std::string TL_workpath);
+		// CoreMapping genMapping(const ConvWl& wl);
+		///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+		};
 	const EyerissCore& core;
 public:
 	EyerissMapper(const EyerissCore& _core);

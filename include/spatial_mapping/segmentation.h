@@ -49,6 +49,8 @@ class Segment_scheme{
 };
 void SA_search(int iter_num,bool base=false, bool fast_mode = false);
 void overall_search(int iter_num, bool full = false);
-Segment_scheme* DP_search(int iter_num, bool base = false,bool fast_mode=false);
+///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+Segment_scheme* DP_search(int iter_num, bool base = false,bool fast_mode=false, bool use_TL_val=false);
+///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
 void mode_control(bool cluster_base, bool calc_noc, bool interleave);
 extern std::vector<std::pair<vol_t, cidx_t>> ave_core;

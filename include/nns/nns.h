@@ -30,5 +30,7 @@ extern const Network transformer_cell;
 extern const Network PNASNet;
 extern const Network resnext50;
 
+extern const Network vgg_tiny;
+
 Network gen_network(std::string model_name);
 #endif // NNS_H
