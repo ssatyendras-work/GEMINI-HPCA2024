@@ -1,0 +1,96 @@
+architecture:
+  version: 0.4
+  nodes:
+  - !Container
+    name: system
+    attributes:
+      technology: "32nm"
+      global_cycle_seconds: 1e-9
+
+  - !Component
+    name: shared_glb
+    class: smartbuffer_SRAM
+    attributes:
+      depth: 16384
+      width: 256
+      n_banks: 32
+      datawidth: 8
+      read_bandwidth: 32
+      write_bandwidth: 32
+    constraints:
+      temporal:
+        permutation: [C, S, R, Q, M, P, N]
+
+  - !Container
+    name: PE_column
+    spatial: {meshX: 16}
+    constraints:
+      spatial:
+        permutation: [N, C, P, R, S, Q, M]
+        factors: [N=1, C=1, P=1, R=1, S=1, Q=16, P=1]
+        split: 8
+
+  - !Container
+    name: PE
+    spatial: {meshY: 16}
+    constraints:
+      spatial:
+        split: 4
+        permutation: [N, P, Q, R, S, C, M]
+        factors: [N=1, P=1, Q=1, R=1, S=1, C=1, M=16]
+
+  - !Parallel
+    nodes:
+    - !Component
+      name: ifmap_spad
+      class: smartbuffer_RF
+      attributes:
+        depth: 8
+        width: 8
+        datawidth: 8
+        read_bandwidth: 2
+        write_bandwidth: 2
+      constraints:
+        dataspace: {keep: [Inputs]}
+        temporal:
+          permutation: [N, M, C, P, Q, R, S]
+          factors: [N=1, M=1, C=1, P=1, Q=1, R=1, S=1]
+
+    - !Component
+      name: weights_spad
+      class: smartbuffer_RF
+      attributes:
+        depth: 8
+        width: 8
+        datawidth: 8
+        read_bandwidth: 2
+        write_bandwidth: 2
+      constraints:
+        dataspace: {keep: [Weights]}
+        temporal:
+          permutation: [N, M, P, Q, S, C, R]
+          factors: [N=1, M=1, P=1, Q=1, S=1, C=1, R=1]
+
+    - !Component
+      name: psum_spad
+      class: smartbuffer_RF
+      attributes:
+        depth: 16
+        width: 8
+        update_fifo_depth: 2
+        datawidth: 8
+        read_bandwidth: 2
+        write_bandwidth: 2
+      constraints:
+        dataspace: {keep: [Outputs]}
+        temporal:
+          permutation: [N, C, P, Q, R, S, M]
+          factors: [N=1, C=3, P=1, Q=1, R=1, S=1, M=1]
+
+  - !Component
+    name: mac
+    class: intmac
+    attributes:
+      multiplier_width: 8
+      adder_width: 8
+

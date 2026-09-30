@@ -189,6 +189,8 @@ class EyerissMapper : public CoreMapper {
 
 		const EyerissCore& core;
 		void getCost(const ConvWl& wl);
+		// file generator for Timeloop, including problem, mapper, and architecture.
+		void genTlFiles(const ConvWl& wl);
 	public:
 		Instance(const EyerissCore& _core);
 		CoreMapping genMapping(const ConvWl& wl);

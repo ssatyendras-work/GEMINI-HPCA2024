@@ -15,11 +15,11 @@ search(){
 experiment() {
     echo '************************* Start Experiment *************************'
     echo "[PROMPT] Check the output in dir $output_path."
-    network_range=(11)
+    network_range=(2)
     DRAM_bw_range=(`expr $TOPS / 2` $TOPS `expr $TOPS \* 2` `expr $TOPS \* 4`)
     NoC_bw_range=(8 16 32 64)
     ul3_range=(256 512 1024 2048 4096)
-    mac_num_range=(512 1024 2048 4096)
+    mac_num_range=(128 256 512 1024 2048 4096)
 
     start_time=$(date +%s)
 
@@ -141,7 +141,7 @@ echo "[INFO] DSE running..."
 experiment > $output_path/dse.log 2> $output_path/dse.err.log
 # Summarize the experiment result.
 echo "[INFO] Summarizing experiment results..."
-./summary.sh $output_path $max_dir_depth
+bash ./summary.sh $output_path $max_dir_depth
 echo "[INFO] Summary at $output_path/result.xlsx"
 echo "[INFO] Summary accomplished."
 echo "[INFO] Best Arch found."
