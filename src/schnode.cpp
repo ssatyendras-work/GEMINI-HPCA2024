@@ -541,7 +541,7 @@ void LNode::print_struct(std::string pad, std::ostream& os) const{
 	os << '/' << layert.layer().weight_size();
 	os << '/' << layert.layer().ofmap_shape().tot_size(num_batch);
 	
-	os << " NoCtime = " << noc.get_time() << " NocBW = " << NoC::NoC_bw << " Computing_time = " << tileSch.cost.time;
+	os << " NoCtime = " << noc.get_time() << " NocBW = " << NoC::NoC_bw << " Computing_time = " << tileSch.cost.time << " ";
 	os << "DDR_access 0 1 2 3 =" << noc.get_DRAM_acc(0) << "," << noc.get_DRAM_acc(1) << "," << noc.get_DRAM_acc(2) << "," << noc.get_DRAM_acc(3) << ",";
 	os << std::endl;
 	if(parent == nullptr || parent->is_DRAM_cut()){

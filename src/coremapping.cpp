@@ -4,6 +4,9 @@
 #include <string>
 #include "partition.h"
 #include "util.h"
+// #include "Python.h"
+
+#include <fstream>
 
 #define HLEN(num_ol) (wl.H + (wl.R - wl.sH)*(num_ol))
 #define WLEN(num_ol) (wl.W + (wl.S - wl.sW)*(num_ol))
@@ -886,6 +889,7 @@ CoreMapper::CoreMapping EyerissInst::genMapping(const CoreMapper::ConvWl& wl) {
  * replN, K1, K2, C2
  */
 
+
 void EyerissInst::getCost(const CoreMapper::ConvWl& wl) {
 	access_t al1_r, al1_w, wl1_r, wl1_w, pl1_r, pl1_w, ul2_r, ul2_w; // ul2_w will be calculated out of intra-core cost.
 	access_t ul2_ar, ul2_aw, ul2_wr, ul2_ww, ul2_pr, ul2_pw;
@@ -897,6 +901,7 @@ void EyerissInst::getCost(const CoreMapper::ConvWl& wl) {
 	len_t C2 = DIVCEIL(Ct, C1);
 	len_t K1 = MIN(Kt, max_k1);
 	len_t K2 = DIVCEIL(Kt, K1);
+
 
 	comp_time = wl.W * wl.S * Kt * Ct * Bt;
 

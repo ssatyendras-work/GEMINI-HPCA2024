@@ -19,7 +19,7 @@ experiment() {
     DRAM_bw_range=(`expr $TOPS / 2` $TOPS `expr $TOPS \* 2` `expr $TOPS \* 4`)
     NoC_bw_range=(8 16 32 64)
     ul3_range=(256 512 1024 2048 4096)
-    mac_num_range=(512 1024 2048 4096)
+    mac_num_range=(128 256 512 1024 2048 4096)
 
     start_time=$(date +%s)
 
@@ -128,7 +128,7 @@ network=(darknet19 vgg resnet50 googlenet resnet101 densenet ires gnmt lstm zfne
 # chiplet number : 1 2 4 8 16 32 64
 cut_long=(1 2 2 4 4 8 8)
 cut_short=(1 1 2 2 4 4 8)
-mm=0
+mm=1
 TOPS=`expr 128 \* 1024`
 rr=150
 bb=64
@@ -141,7 +141,7 @@ echo "[INFO] DSE running..."
 experiment > $output_path/dse.log 2> $output_path/dse.err.log
 # Summarize the experiment result.
 echo "[INFO] Summarizing experiment results..."
-./summary.sh $output_path $max_dir_depth
+bash ./summary.sh $output_path $max_dir_depth
 echo "[INFO] Summary at $output_path/result.xlsx"
 echo "[INFO] Summary accomplished."
 echo "[INFO] Best Arch found."

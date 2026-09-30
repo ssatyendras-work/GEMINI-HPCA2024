@@ -954,19 +954,86 @@ int main(int argc, char** argv){
 	else {
 		NoP_side_num = 4;
 	}
+	
+	
+
+	
+	al2.Size = 0;
+	al1.RCost = (buffer(vector_len * 8, al1.Size)[0]+0.1*lane_len/8) * 8 * turnover_factor;
+	al1.WCost = buffer(vector_len * 8, al1.Size)[1] * 8 * turnover_factor ;
+	wl1.RCost = buffer(vector_len * 8, wl1.Size)[0] * 8 * turnover_factor ;
+	wl1.WCost = buffer(vector_len * 8, wl1.Size)[1] * 8 * turnover_factor ;
+	ol1.RCost = buffer(lane_len * 16, ol1.Size)[0] * 8 * turnover_factor ;
+	ol1.WCost = buffer(lane_len * 16, ol1.Size)[1] * 8 * turnover_factor ;
+	ol2.RCost = 0.07648125 * 8 * ul3_ / (1024 KB) * turnover_factor ;// ol2 is a small part of ul3
+	ol2.WCost = 0.0989875 * 8 * ul3_ / (1024 KB) *turnover_factor ;
+	ul3.RCost = 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor; 
+	ul3.WCost = 0.234025 * 8 * ul3_ /(1024 KB)* turnover_factor;  
+	al2.RCost = al2.WCost = 0;
+	wl2.RCost = wl2.WCost = 0;
+	
+	PolarCore core(s,bus,al1,wl1,ol1,al2,wl2,ol2,ul3,LR_mac_num,LR_mac_cost);
+	PolarMapper mapper(core);
+
+
+	EyerissCore::Buffer _al1, _wl1, _pl1, ul2;
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	EyerissCore::PESetting s2(4*vector_len, 4*lane_len, 0.018);
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	EyerissCore::Bus ibus(0.018, 64);
+	EyerissCore::Bus wbus(0.018, 64);
+	EyerissCore::Bus pbus(0.018, 64); // ifmap RC, weight RCK, psum RK
+
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	_al1.Size = 4 * 4*lane_len; // 4 register per mac // 32;
+	_pl1.Size = 4 * 4*lane_len; // 4 register per mac // 1;
+	_wl1.Size = 4 * 4*lane_len; // 4 register per mac //128;
+	ul2.Size = ul3_; // 1024 KB;
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	
+	_al1.RCost = 0.0509 * 8 * turnover_factor; //8bit IO single port
+	_al1.WCost = 0.0506 * 8 * turnover_factor;//0.045;
+	_wl1.RCost = 0.0545 * 8 * turnover_factor; //Using 2 banks of 64
+	_wl1.WCost = 0.054 * 8 * turnover_factor;//0.090;
+	_pl1.RCost = _pl1.WCost = 0.0 * turnover_factor;
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	ul2.RCost  = 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor; // 0.1317125 * 8 * turnover_factor;
+	ul2.WCost  = 0.234025 * 8 * ul3_ /(1024 KB)* turnover_factor;  // 0.234025 * 8 * turnover_factor;
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	
+	EyerissCore core2(s2, ibus, wbus, pbus, _al1, _wl1, _pl1, ul2, LR_mac_num, LR_mac_cost);
+	EyerissMapper mapper2(core2);
+
+
+	CoreMapper* cMapper;
+	if(mm == 0){
+		cMapper = &mapper;
+	}else{
+		cMapper = &mapper2;
+	}
+
+
+
+
+
 
 	//COST
 	double cost_silicon_mm_compute = 0.084887 ;
 	double cost_silicon_mm_IO = 0.056383;
 	double cost_os = 0.005; //per mm^2
 	double os_area_scale_factor = 4;// os area will be larger than chip
-	double ddr_cost = 3.5;//per 16bithttps://www.dramexchange.com/
-	double os_ocst_factor;//larger os will be more expensive 
+	double ddr_cost = 3.5; //per 16bit https://www.dramexchange.com/
+	double os_ocst_factor; //larger os will be more expensive 
 	double post_layout_scale = 2.2;
 	double control_unit_prop = 1.05;
 	double DFT_prop = 1.05;
 	//*********************DIE AREA*********************
-	double sram_area_per_core = (ul3_ + (al1.Size + wl1.Size + ol1.Size)*16) * SRAM_den;
+	double sram_area_per_core;
+	if(mm == 0){
+		sram_area_per_core = (ul3_ + (al1.Size + wl1.Size + ol1.Size)*16) * SRAM_den;
+	}else{
+		sram_area_per_core = (ul3_ + (_al1.Size + _wl1.Size + _pl1.Size)*4*vector_len) * SRAM_den;
+	}
 	double mac_area_per_core = 16*vector_len * lane_len * MAC_den + LR_mac_num*LR_mac_den;
 	double NoC_area_per_core = NoC::NoC_bw * NoC_den;
 	double core_area = (sram_area_per_core + mac_area_per_core + NoC_area_per_core)*post_layout_scale;
@@ -1017,6 +1084,8 @@ int main(int argc, char** argv){
 	else {
 		os_ocst_factor = 4;
 	}
+
+
 	//*********************COST CALC*********************
 	double cost_overall = 0;
 	double yield_compute_die = 0;
@@ -1044,53 +1113,7 @@ int main(int argc, char** argv){
 	}
 	//*********************COST CALC*********************
 
-	
-	
-	al2.Size = 0;
-	al1.RCost = (buffer(vector_len * 8, al1.Size)[0]+0.1*lane_len/8) * 8 * turnover_factor;
-	al1.WCost = buffer(vector_len * 8, al1.Size)[1] * 8 * turnover_factor ;
-	wl1.RCost = buffer(vector_len * 8, wl1.Size)[0] * 8 * turnover_factor ;
-	wl1.WCost = buffer(vector_len * 8, wl1.Size)[1] * 8 * turnover_factor ;
-	ol1.RCost = buffer(lane_len * 16, ol1.Size)[0] * 8 * turnover_factor ;
-	ol1.WCost = buffer(lane_len * 16, ol1.Size)[1] * 8 * turnover_factor ;
-	ol2.RCost = 0.07648125 * 8 * ul3_ / (1024 KB) * turnover_factor ;// ol2 is a small part of ul3
-	ol2.WCost = 0.0989875 * 8 * ul3_ / (1024 KB) *turnover_factor ;
-	ul3.RCost = 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor; 
-	ul3.WCost = 0.234025 * 8 * ul3_ /(1024 KB)* turnover_factor;  
-	al2.RCost = al2.WCost = 0;
-	wl2.RCost = wl2.WCost = 0;
-	
-	PolarCore core(s,bus,al1,wl1,ol1,al2,wl2,ol2,ul3,LR_mac_num,LR_mac_cost);
-	PolarMapper mapper(core);
 
-	EyerissCore::Buffer _al1, _wl1, pl1, ul2;
-	EyerissCore::PESetting s2(mac_dim, mac_dim, 0.018);
-	EyerissCore::Bus ibus(0.018, 64);
-	EyerissCore::Bus wbus(0.018, 64);
-	EyerissCore::Bus pbus(0.018, 64); // ifmap RC, weight RCK, psum RK
-
-	_al1.Size = 32;
-	pl1.Size = 1;
-	_wl1.Size = 128;
-	ul2.Size = 1024 KB;
-
-	_al1.RCost = 0.0509 * 8 * turnover_factor; //8bit IO single port
-	_al1.WCost = 0.0506 * 8 * turnover_factor;//0.045;
-	_wl1.RCost = 0.0545 * 8 * turnover_factor; //Using 2 banks of 64
-	_wl1.WCost = 0.054 * 8 * turnover_factor;//0.090;
-	pl1.RCost = pl1.WCost = 0.0 * turnover_factor;
-	ul2.RCost = 0.1317125 * 8 * turnover_factor;
-	ul2.WCost = 0.234025 * 8 * turnover_factor;
-
-	EyerissCore core2(s2, ibus, wbus, pbus, _al1, _wl1, pl1, ul2, LR_mac_num, LR_mac_cost);
-	EyerissMapper mapper2(core2);
-
-	CoreMapper* cMapper;
-	if(mm == 0){
-		cMapper = &mapper;
-	}else{
-		cMapper = &mapper2;
-	}
 	// TOPS
 	
 

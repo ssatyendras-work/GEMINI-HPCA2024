@@ -7,6 +7,13 @@
 #include "layer.h"
 #include "util.h"
 
+
+#include <iostream>
+#include <vector>
+#include <memory>
+#include "xgboost/c_api.h"
+
+
 struct PartSch;
 //#include "partition.h"
 
@@ -58,6 +65,42 @@ struct PartSch;
  *
  */
 
+
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+class xgb_extractor {
+public:
+	xgb_extractor(const std::string& model_path);
+	std::vector<float> extract(DMatrixHandle dmat);
+private:
+	BoosterHandle booster;
+	int n_trees;
+};
+
+class nn_predictor {
+public:
+	nn_predictor(const std::string& weight_prefix, int input_dim, int hidden_dim, int output_dim, int n_leafs);
+	std::vector<float> predict(const std::vector<float>& input);
+private:
+	int input_dim, hidden_dim, output_dim, n_leafs;
+	std::vector<float> W1, b1, W2, b2;
+	void load_weights(const std::string& file, std::vector<float>& vec, int expected_size);
+};
+	
+class TL_predictors {
+public:
+	TL_predictors(const std::string& model_dir);
+	void run_predictions(const std::vector<float>& core_feature, std::vector<float>& results);
+private:
+	std::unique_ptr<xgb_extractor> xgb;
+	std::unique_ptr<nn_predictor> nn;
+	std::vector<std::vector<float>> input_bias;
+	std::vector<std::vector<float>> output_bias;
+	void load_bias(const std::string& bias_path, std::vector<std::vector<float>>& bias);
+};
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+
+
+
 class CoreMapper{
 public:
 	typedef ConvLayer::Workload ConvParent;
@@ -86,7 +129,7 @@ public:
 	};
 	// Base core
 	const Core& base_core;
-	CoreMapper(const Core& c);
+	CoreMapper(const Core& c, const std::vector<std::string>& model_paths);
 	CoreMapping genLayerMap(const Layer& layer, const PartSch& part, const FetchSch& fetch, len_t batch_size, bool wgtB);
 	virtual CoreMapping genMapping(const ConvWl& wl) = 0;
 	const Core& core() const;
@@ -95,6 +138,10 @@ public:
 	virtual void set_lr_utime(LRLayer& l) const;
 	virtual vol_t get_ubuf_size() const = 0;
 	virtual ~CoreMapper() = default;
+/////////////////////////////////////////////////////////////// Addiing performance predictors ///////////////////////////////////////////////////////////
+protected:
+	static std::vector<std::unique_ptr<TL_predictors>> predictors_set;
+/////////////////////////////////////////////////////////////// Addiing performance predictors ///////////////////////////////////////////////////////////
 };
 
 class PolarMapper: public CoreMapper{
@@ -152,10 +199,15 @@ class PolarMapper: public CoreMapper{
 	public:
 		Instance(const PolarCore& _core);
 		CoreMapping genMapping(const ConvWl& wl);
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+		std::vector<float> gen_predictor_input(const ConvWl& wl, const Core& c);	
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 	};
 	const PolarCore& core;
 public:
-	PolarMapper(const PolarCore& _core);
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+	PolarMapper(const PolarCore& _core, const std::vector<std::string>& model_paths);
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 	virtual CoreMapping genMapping(const ConvWl& wl) override;
 	virtual void set_conv_utime(ConvLayer& l) const override;
 	virtual vol_t get_ubuf_size() const override;
@@ -189,13 +241,19 @@ class EyerissMapper : public CoreMapper {
 
 		const EyerissCore& core;
 		void getCost(const ConvWl& wl);
+		
 	public:
 		Instance(const EyerissCore& _core);
 		CoreMapping genMapping(const ConvWl& wl);
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+		std::vector<float> gen_predictor_input(const ConvWl& wl, const Core& c);	
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 	};
 	const EyerissCore& core;
 public:
-	EyerissMapper(const EyerissCore& _core);
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+	EyerissMapper(const EyerissCore& _core, const std::vector<std::string>& model_paths);
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 	virtual CoreMapping genMapping(const ConvWl& wl) override;
 	virtual vol_t get_ubuf_size() const override;
 	// virtual ~EyerissMapper() override = default;

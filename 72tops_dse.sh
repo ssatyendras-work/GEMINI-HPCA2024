@@ -3,6 +3,21 @@
 
 # Execute `stschedule` once.
 # Usage: search $mm $nn $xx $yy $ss $bb $rr $ff $xcut $ycut $_serdes_lane $_DRAM_bw $_NoC_bw $_mac_num $_ul3 $TOPS result.log out.log err.log search.log
+# mm: core type (0: Polar (NVDLA), 1: Eyeriss))
+# nn: network type (0: darknet19, 1: vgg, 2: resnet50, 3: googlenet, 4: resnet101, 5: densenet, 6: ires, 7: gnmt, 8: lstm, 9: zfnet, 10: transformer, 11: transformer_cell, 12: pnasnet, 13: resnext50, 14: resnet152)
+# xx & yy: means the number of cores in the x and y axis, respectively. Default noc topology is mesh.
+# ss: means stride, whose definition can be found in ISCA2023 SET, HPCA2024GEMINI, ASPLOS2019TANGRAM.
+# bb: means batch size (2^n is recommanded).
+# rr: means exploration rounds number, which will be multiplied with a coefficient.
+# ff: means optimization goal, concrete formula can be found in main.cpp.
+# xcut & ycut: means the chiplet partition granularity at the x and y dimension.
+# _serdes_lane: number of serdes lanes
+# _DRAM_bw: DRAM bandwidth
+# _NoC_bw: NoC bandwidth
+# _mac_num: number of MACs
+# _ul3: size of ul3
+# TOPS: total TOPS
+
 search(){
     start=$(date +%s)
     echo "$1 $2 $3 $4 $5 $6 $7 $8 $9 ${10} ${11} ${12} ${13} ${14} ${15} ${16}" | ./build/stschedule ${17} > ${18} 2> ${19}
@@ -15,11 +30,15 @@ search(){
 experiment() {
     echo '************************* Start Experiment *************************'
     echo "[PROMPT] Check the output in dir $output_path."
-    network_range=(11)
+    network_range=(1)
+    # DRAM_bw_range=($TOPS)
+    # NoC_bw_range=(8)
+    # ul3_range=(256 1024 4096)
+    # mac_num_range=(512)
     DRAM_bw_range=(`expr $TOPS / 2` $TOPS `expr $TOPS \* 2` `expr $TOPS \* 4`)
     NoC_bw_range=(8 16 32 64)
     ul3_range=(256 512 1024 2048 4096)
-    mac_num_range=(512 1024 2048 4096)
+    mac_num_range=(128 256 512 1024 2048 4096)
 
     start_time=$(date +%s)
 
@@ -128,7 +147,9 @@ network=(darknet19 vgg resnet50 googlenet resnet101 densenet ires gnmt lstm zfne
 # chiplet number : 1 2 4 9 18 36
 cut_long=(1 2 2 3 6 6)
 cut_short=(1 1 2 3 3 6)
-mm=0
+# cut_long=(1)
+# cut_short=(1)
+mm=1
 TOPS=`expr 72 \* 1024`
 rr=150
 bb=64
@@ -137,11 +158,12 @@ ff=1
 # ************************ Execute Experiment ************************
 echo "******************** 72TOPS DSE Start ********************"
 echo "[INFO] Check output in dir $output_path."
+echo "[INFO] PID of this script: $$"
 echo "[INFO] DSE running..."
 experiment > $output_path/dse.log 2> $output_path/dse.err.log
 # Summarize the experiment result.
 echo "[INFO] Summarizing experiment results..."
-./summary.sh $output_path $max_dir_depth
+bash ./summary.sh $output_path $max_dir_depth
 echo "[INFO] Summary at $output_path/result.xlsx"
 echo "[INFO] Summary accomplished."
 echo "[INFO] Best Arch found."
