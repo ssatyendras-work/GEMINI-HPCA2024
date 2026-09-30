@@ -19,7 +19,7 @@
 #include "spatial_mapping/light_placement.h"
 
 class LayerEngine;
-//#include "layerengine.h"
+// #include "layerengine.h"
 
 // TODO: Temp. Remove later.
 typedef Network::lid_t lid_t;
@@ -143,6 +143,10 @@ public:
 	static LayerEngine* layerMapper_fast;
 	static len_t tot_batch;
 	static energy_breakdown record;
+
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	static void set_TL_usage(bool on);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
 
 	virtual void print_struct(std::string pad = "", std::ostream& os = std::cout) const =0;
 	void print_res(std::ostream& os = std::cout) const;

@@ -36,6 +36,16 @@
 
 using namespace std;
 
+
+// ///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+std::vector<std::string> all_model_path_sets = {
+	"./TL_predictor/pred_models/conv_k3",
+	"./TL_predictor/pred_models/gemm",
+	"./TL_predictor/pred_models/conv_k1",
+};
+// ///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+
+
 struct WholeSch{
 	LTreeNode* tree;
 	SchNode* sch;
@@ -697,6 +707,10 @@ void LP_search(lid_t num_layer, len_t tot_batch, Cluster& c, WholeSch& w_sch, bo
 	return;
 }
 
+
+
+
+
 std::vector<double> buffer(int width, vol_t size) {
 	vector<double> access;//per byte 0 is read, 1 is write
 	access.resize(2);
@@ -842,6 +856,15 @@ double wafer_util(double area) {
 		return 0.743;
 	}
 }
+
+
+
+
+
+
+
+
+
 int main(int argc, char** argv){
 	unsigned int seed = time(NULL);
 	srand(seed);
@@ -850,8 +873,21 @@ int main(int argc, char** argv){
 
 	// Get input parameters.
 	int mm, nn, xx, yy, ss, bb, rr, ff, xcut, ycut, _serdes_lane, _DRAM_bw, _NoC_bw, _mac_dim, _ul3, total_tops;
-	cin >> mm >> nn >> xx >> yy >> ss >> bb >> rr >> ff >> xcut >> ycut >> _serdes_lane >> _DRAM_bw >> _NoC_bw >> _mac_dim >> _ul3 >> total_tops;
-	// assert(total_tops == 2*xx*yy*_mac_dim*_mac_dim);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	int op_mode;  // (use predictor, inference by Timeloop)  0: (0,0),  1: (1,0),  2: (0,1),  3: (1,1) 
+	std::string TL_workpath;
+	cin >> mm >> nn >> xx >> yy >> ss >> bb >> rr >> ff >> xcut >> ycut >> _serdes_lane >> _DRAM_bw >> _NoC_bw >> _mac_dim >> _ul3 >> total_tops >> op_mode >> TL_workpath;
+	bool TLP_flag, TL_flag;
+	switch(op_mode){
+		case 0:{ TLP_flag=false; TL_flag=false;break; }
+		case 1:{ TLP_flag=true;  TL_flag=false;break; }
+		case 2:{ TLP_flag=false; TL_flag=true; break; }
+		case 3:{ TLP_flag=true;  TL_flag=true; break; }
+		default:{ std::cout << "Operation mode not supported." << endl; return 1; }
+	}
+	// cin >> mm >> nn >> xx >> yy >> ss >> bb >> rr >> ff >> xcut >> ycut >> _serdes_lane >> _DRAM_bw >> _NoC_bw >> _mac_dim >> _ul3 >> total_tops;
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+		// assert(total_tops == 2*xx*yy*_mac_dim*_mac_dim);
 	//mm means core_microarch: 0 means PolarCore (NVDLA-STYLE), which is recommenmanded; 1 means Eyeriss Core.
 	//nn means network choice
 	//xx & yy means the number of cores in the x and y axis, respectively. Default noc topology is mesh.
@@ -885,12 +921,15 @@ int main(int argc, char** argv){
 	}
 
 	//DENSITY
-	density_t SRAM_den = 0.0964 * 8;
-	density_t MAC_den = 57.9;//8-bit
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
+	density_t SRAM_den = 7214064.13592 /4096 /1024; // 0.0964 * 8;
+	density_t Buffer_den = 132.452588; // using buffer instead of SRAM, width=8bits depth=4
+	density_t MAC_den = 159.85;//57.9;//8-bit
 	density_t LR_mac_den = MAC_den * 8;
-	density_t NoP_len = 333; 
-	density_t NoP_wid = 800;
-	density_t NoC_den = 16781.312;
+	density_t NoP_len = 333;
+	density_t NoP_wid = 800 * 1.1; // 800
+	density_t NoC_den = 16781.312 * 2.0; // 16781.312
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
 	density_t DDR_PHY_den = 6.53 * 1000000;
 	density_t DDR_ctrl_den = 510 * 1000 * 0.09;
 	double yield = 0.9;
@@ -923,9 +962,11 @@ int main(int argc, char** argv){
 	NoC::seperate_IO = true;
 	double turnover_factor = 0.3/0.5;
 	ofm_ubuf_vol = 10 KB;
-	NoC::NoP_hop_cost = 2 * 8; //DSE->3.3*8 ; Simba->2*8
-	NoC::NoC_hop_cost = 0.8 * 8;
-	NoC::DRAM_acc_cost = 10.5 * 8;
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
+	NoC::NoP_hop_cost = 1.25 * 2 * 8; // 2 * 8; //DSE->3.3*8 ; Simba->2*8
+	NoC::NoC_hop_cost = 2.0 * 0.8 * 8; // 0.8 * 8;
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
+		NoC::DRAM_acc_cost = 10.5 * 8;
 	energy_t LR_mac_cost = 0.0873; //IEEE FP16
 	Core::numMac_t LR_mac_num = vector_len * lane_len *16 / 16;
 	PolarCore::Buffer al1, wl1, ol1, al2, wl2, ol2, ul3;
@@ -955,6 +996,79 @@ int main(int argc, char** argv){
 		NoP_side_num = 4;
 	}
 
+	
+
+
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
+	double SRAM_Rscale_factor = 8.252 / 1.737;
+	double SRAM_Wscale_factor = 7.877 / 1.872;
+	al2.Size = 0;
+	al1.RCost = SRAM_Rscale_factor * (buffer(vector_len * 8, al1.Size)[0]+0.1*lane_len/8) * 8 * turnover_factor;
+	al1.WCost = SRAM_Rscale_factor * buffer(vector_len * 8, al1.Size)[1] * 8 * turnover_factor ;
+	wl1.RCost = SRAM_Rscale_factor * buffer(vector_len * 8, wl1.Size)[0] * 8 * turnover_factor ;
+	wl1.WCost = SRAM_Rscale_factor * buffer(vector_len * 8, wl1.Size)[1] * 8 * turnover_factor ;
+	ol1.RCost = SRAM_Rscale_factor * buffer(lane_len * 16, ol1.Size)[0] * 8 * turnover_factor ;
+	ol1.WCost = SRAM_Rscale_factor * buffer(lane_len * 16, ol1.Size)[1] * 8 * turnover_factor ;
+	ol2.RCost = SRAM_Rscale_factor * 0.07648125 * 8 * ul3_ / (1024 KB) * turnover_factor ;// ol2 is a small part of ul3
+	ol2.WCost = SRAM_Rscale_factor * 0.0989875 * 8 * ul3_ / (1024 KB) *turnover_factor ;
+	ul3.RCost = SRAM_Rscale_factor * 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor; 
+	ul3.WCost = SRAM_Rscale_factor * 0.234025 * 8 * ul3_ /(1024 KB)* turnover_factor;  
+	al2.RCost = al2.WCost = 0;
+	wl2.RCost = wl2.WCost = 0;
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
+	
+	PolarCore core(s,bus,al1,wl1,ol1,al2,wl2,ol2,ul3,LR_mac_num,LR_mac_cost);
+	PolarMapper mapper(core);
+	
+	
+	EyerissCore::Buffer _al1, _wl1, _pl1, ul2;
+	///////////////////////////////////////////////////////////// Correct the potential mac error and align with 32nm process /////////////////////////////////////////////////////////////
+	EyerissCore::PESetting s2(4*vector_len, 4*lane_len, 0.17308);  // 0.018
+	EyerissCore::Bus ibus(0.018, 64);
+	EyerissCore::Bus wbus(0.018, 64);
+	EyerissCore::Bus pbus(0.018, 64); // ifmap RC, weight RCK, psum RK
+	///////////////////////////////////////////////////////////// Correct the potential mac error and align with 32nm process /////////////////////////////////////////////////////////////
+	
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	_al1.Size = 4 * 4*lane_len; // 4 register per mac // 32;
+	_pl1.Size = 4 * 4*lane_len; // 4 register per mac // 1;
+	_wl1.Size = 4 * 4*lane_len; // 4 register per mac //128;
+	ul2.Size = ul3_; // 1024 KB;
+	///////////////////////////////////////////////////////////// Correct the potential error /////////////////////////////////////////////////////////////
+	
+	///////////////////////////////////////////////////////////// Correct the potential mac error and align with 32nm process /////////////////////////////////////////////////////////////
+	_al1.RCost = 0.045399; // 0.0509 * 8 * turnover_factor; //8bit IO single port
+	_al1.WCost = 0.039939; // 0.0506 * 8 * turnover_factor;//0.045;
+	_wl1.RCost = 0.045399; // 0.0545 * 8 * turnover_factor; //Using 2 banks of 64
+	_wl1.WCost = 0.039939; // 0.054 * 8 * turnover_factor;//0.090;
+	_pl1.RCost = 0.045399; // 0.0 * turnover_factor;
+	_pl1.WCost = 0.039939; // 0.0 * turnover_factor;
+	ul2.RCost  = 528.102471/64 * ul3_ /(1024 KB); // 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor; // 0.1317125 * 8 * turnover_factor;
+	ul2.WCost  = 504.980471/64 * ul3_ /(1024 KB); // 0.234025 * 8 * ul3_ /(1024 KB) * turnover_factor; // 0.234025 * 8 * turnover_factor;
+	///////////////////////////////////////////////////////////// Correct the potential mac error and align with 32nm process /////////////////////////////////////////////////////////////
+	
+	EyerissCore core2(s2, ibus, wbus, pbus, _al1, _wl1, _pl1, ul2, LR_mac_num, LR_mac_cost);
+	EyerissMapper mapper2(core2);
+	
+
+	CoreMapper* cMapper;
+	if(mm == 0){
+		cMapper = &mapper;
+	}else{
+		cMapper = &mapper2;
+	}
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	if(TLP_flag){
+		cMapper->setting_predictor_usage(all_model_path_sets);  // set using predictor with explore
+	}
+	if(TL_flag){
+		cMapper->setting_TL_path(TL_workpath);
+	}
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	
+
+
+
 	//COST
 	double cost_silicon_mm_compute = 0.084887 ;
 	double cost_silicon_mm_IO = 0.056383;
@@ -966,7 +1080,14 @@ int main(int argc, char** argv){
 	double control_unit_prop = 1.05;
 	double DFT_prop = 1.05;
 	//*********************DIE AREA*********************
-	double sram_area_per_core = (ul3_ + (al1.Size + wl1.Size + ol1.Size)*16) * SRAM_den;
+	///////////////////////////////////////////////////////////// Correct the potential mac error and align with 32nm process /////////////////////////////////////////////////////////////
+	double sram_area_per_core;
+	if(mm == 0){ // using default NVDLA setup, L1 using SRAM
+		sram_area_per_core = (ul3_ + (al1.Size + wl1.Size + ol1.Size)*16) * SRAM_den;
+	}else{ // using default Eyeris setup, L1 using FFs
+		sram_area_per_core = ul3_*SRAM_den + 3*Buffer_den*vector_len*lane_len*16;
+	}
+	///////////////////////////////////////////////////////////// Correct the potential mac error and align with 32nm process /////////////////////////////////////////////////////////////
 	double mac_area_per_core = 16*vector_len * lane_len * MAC_den + LR_mac_num*LR_mac_den;
 	double NoC_area_per_core = NoC::NoC_bw * NoC_den;
 	double core_area = (sram_area_per_core + mac_area_per_core + NoC_area_per_core)*post_layout_scale;
@@ -1019,6 +1140,9 @@ int main(int argc, char** argv){
 	}
 	//*********************COST CALC*********************
 	double cost_overall = 0;
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
+	double yield_defect_rate = 25000000; // 40,000,000;
+	///////////////////////////////////////////////////////////// Migrate to 32nm /////////////////////////////////////////////////////////////
 	double yield_compute_die = 0;
 	double yield_IO_die = 0;
 	double cost_compute = 0;
@@ -1027,15 +1151,15 @@ int main(int argc, char** argv){
 	double yield_soc = 0;
 	double cost_soc = 0;
 	if (compute_die_num != 1) {
-		yield_compute_die = pow(yield, compute_die_area / 40000000);
-		yield_IO_die = pow(yield, IO_die_area / 4 / 40000000);
+		yield_compute_die = pow(yield, compute_die_area / yield_defect_rate);
+		yield_IO_die = pow(yield, IO_die_area / 4 / yield_defect_rate);
 		cost_compute = compute_die_area * compute_die_num / yield_compute_die / 1000000 * cost_silicon_mm_compute/wafer_util(compute_die_area);
 		cost_IO = IO_die_area / 1000000 * cost_silicon_mm_IO/ wafer_util(IO_die_area/4)/yield_IO_die + DRAM_bw_each * 4 / 44.0 * ddr_cost;
 		cost_os_overall = os_area * os_ocst_factor / 1000000 * cost_os;
 		cost_overall = cost_compute + cost_IO + cost_os_overall;
 	}
 	else {
-		yield_soc = pow(yield, total_die_area / 40000000);
+		yield_soc = pow(yield, total_die_area / yield_defect_rate);
 		cost_soc = total_die_area / yield_soc / 1000000 * cost_silicon_mm_compute/ wafer_util(total_die_area) + DRAM_bw_each * 4 / 44 * ddr_cost;
 		cost_os_overall = os_area * os_ocst_factor / 1000000 * cost_os;
 		cost_compute = cost_soc;
@@ -1044,53 +1168,7 @@ int main(int argc, char** argv){
 	}
 	//*********************COST CALC*********************
 
-	
-	
-	al2.Size = 0;
-	al1.RCost = (buffer(vector_len * 8, al1.Size)[0]+0.1*lane_len/8) * 8 * turnover_factor;
-	al1.WCost = buffer(vector_len * 8, al1.Size)[1] * 8 * turnover_factor ;
-	wl1.RCost = buffer(vector_len * 8, wl1.Size)[0] * 8 * turnover_factor ;
-	wl1.WCost = buffer(vector_len * 8, wl1.Size)[1] * 8 * turnover_factor ;
-	ol1.RCost = buffer(lane_len * 16, ol1.Size)[0] * 8 * turnover_factor ;
-	ol1.WCost = buffer(lane_len * 16, ol1.Size)[1] * 8 * turnover_factor ;
-	ol2.RCost = 0.07648125 * 8 * ul3_ / (1024 KB) * turnover_factor ;// ol2 is a small part of ul3
-	ol2.WCost = 0.0989875 * 8 * ul3_ / (1024 KB) *turnover_factor ;
-	ul3.RCost = 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor; 
-	ul3.WCost = 0.234025 * 8 * ul3_ /(1024 KB)* turnover_factor;  
-	al2.RCost = al2.WCost = 0;
-	wl2.RCost = wl2.WCost = 0;
-	
-	PolarCore core(s,bus,al1,wl1,ol1,al2,wl2,ol2,ul3,LR_mac_num,LR_mac_cost);
-	PolarMapper mapper(core);
 
-	EyerissCore::Buffer _al1, _wl1, pl1, ul2;
-	EyerissCore::PESetting s2(mac_dim, mac_dim, 0.018);
-	EyerissCore::Bus ibus(0.018, 64);
-	EyerissCore::Bus wbus(0.018, 64);
-	EyerissCore::Bus pbus(0.018, 64); // ifmap RC, weight RCK, psum RK
-
-	_al1.Size = 32;
-	pl1.Size = 1;
-	_wl1.Size = 128;
-	ul2.Size = 1024 KB;
-
-	_al1.RCost = 0.0509 * 8 * turnover_factor; //8bit IO single port
-	_al1.WCost = 0.0506 * 8 * turnover_factor;//0.045;
-	_wl1.RCost = 0.0545 * 8 * turnover_factor; //Using 2 banks of 64
-	_wl1.WCost = 0.054 * 8 * turnover_factor;//0.090;
-	pl1.RCost = pl1.WCost = 0.0 * turnover_factor;
-	ul2.RCost = 0.1317125 * 8 * turnover_factor;
-	ul2.WCost = 0.234025 * 8 * turnover_factor;
-
-	EyerissCore core2(s2, ibus, wbus, pbus, _al1, _wl1, pl1, ul2, LR_mac_num, LR_mac_cost);
-	EyerissMapper mapper2(core2);
-
-	CoreMapper* cMapper;
-	if(mm == 0){
-		cMapper = &mapper;
-	}else{
-		cMapper = &mapper2;
-	}
 	// TOPS
 	
 
@@ -1171,6 +1249,10 @@ int main(int argc, char** argv){
 		net_name="resnet152";
 		break;
 	// TODO: Support more DNNs.
+	case 15:
+		network = &vgg_tiny;
+		net_name="vgg_tiny";
+		break;
 	default:
 		throw runtime_error("Model not supported.");
 	}
@@ -1321,7 +1403,7 @@ int main(int argc, char** argv){
 
 	// Gemini mapping.
 	mode_control(false, false, true);
-	scheme = DP_search(SAEngine::nrounds, false, false);
+	scheme = DP_search(SAEngine::nrounds, false, false, TL_flag);
 	if (scheme != nullptr) {
 		output(3);
 		delete scheme;

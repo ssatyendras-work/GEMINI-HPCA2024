@@ -252,6 +252,25 @@ void SchNode::print_res(std::ostream& os) const{
 	}
 }
 
+
+///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+void SchNode::set_TL_usage(bool on) {
+    if (SchNode::layerMapper)       SchNode::layerMapper->set_TL_usage(on);
+    if (SchNode::layerMapper_fast)  SchNode::layerMapper_fast->set_TL_usage(on);
+}
+// void SchNode::recompute_TL() {
+//     for (auto* node : this->nodes_in_cut) {
+//         if (!node) continue;
+//         // Get existing placement
+//         Light_placement place = node->place_sch.light_version();
+//         // Re-run fillin (evaluation only, no search)
+//         node->searchLayer(true /* usefillin */, place);
+//     }
+// }
+///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+
+
+
 std::ostream& operator<<(std::ostream& os, const SchNode& sch){
 	sch.print_res(os);
 	return os;
@@ -541,7 +560,7 @@ void LNode::print_struct(std::string pad, std::ostream& os) const{
 	os << '/' << layert.layer().weight_size();
 	os << '/' << layert.layer().ofmap_shape().tot_size(num_batch);
 	
-	os << " NoCtime = " << noc.get_time() << " NocBW = " << NoC::NoC_bw << " Computing_time = " << tileSch.cost.time;
+	os << " NoCtime = " << noc.get_time() << " NocBW = " << NoC::NoC_bw << " Computing_time = " << tileSch.cost.time << " ";
 	os << "DDR_access 0 1 2 3 =" << noc.get_DRAM_acc(0) << "," << noc.get_DRAM_acc(1) << "," << noc.get_DRAM_acc(2) << "," << noc.get_DRAM_acc(3) << ",";
 	os << std::endl;
 	if(parent == nullptr || parent->is_DRAM_cut()){

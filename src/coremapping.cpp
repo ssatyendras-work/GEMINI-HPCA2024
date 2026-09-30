@@ -2,8 +2,13 @@
 
 #include <cassert>
 #include <string>
+#include <sstream>
+#include <cmath>
 #include "partition.h"
 #include "util.h"
+// #include "Python.h"
+
+#include <fstream>
 
 #define HLEN(num_ol) (wl.H + (wl.R - wl.sH)*(num_ol))
 #define WLEN(num_ol) (wl.W + (wl.S - wl.sW)*(num_ol))
@@ -27,7 +32,134 @@ const PolarInst::Part PolarInst::all_parts[]={
 	{PartDim::H,PartDim::W},
 };
 
+
+
+
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+xgb_extractor::xgb_extractor(const std::string& model_path) {
+	// Create and load the model
+	XGBoosterCreate(nullptr, 0, &booster);
+	XGBoosterLoadModel(booster, model_path.c_str());
+	XGBoosterSetParam(booster, "nthread", "1");
+}
+
+std::vector<float> xgb_extractor::extract(DMatrixHandle dmat) {
+	bst_ulong out_len;
+	const float* out_result;
+	XGBoosterPredict(booster, dmat, 2, 0, 0, &out_len, &out_result);
+	std::vector<float> features(out_result, out_result + out_len);
+    return features;
+}
+
+nn_predictor::nn_predictor(const std::string& prefix, int in_dim, int hid_dim, int out_dim, int leaf_num)
+    : input_dim(in_dim), hidden_dim(hid_dim), output_dim(out_dim), n_leafs(leaf_num)  {
+    load_weights(prefix + "/W1.bin", W1, input_dim * hidden_dim * leaf_num);
+    load_weights(prefix + "/b1.bin", b1, hidden_dim);
+    load_weights(prefix + "/W2.bin", W2, hidden_dim * output_dim);
+    load_weights(prefix + "/b2.bin", b2, output_dim);
+}
+
+void nn_predictor::load_weights(const std::string& file, std::vector<float>& vec, int expected_size) {
+    vec.resize(expected_size);
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        std::cerr << "Failed to open weight file: " << file << std::endl;
+        exit(1);
+    }
+    in.read(reinterpret_cast<char*>(vec.data()), expected_size * sizeof(float));
+    in.close();
+}
+
+std::vector<float> nn_predictor::predict(const std::vector<float>& input) {
+	// option 1: direct regression
+	//  - param: b1, w1, bn_gamma, bn_beta, bn_mean, bn_var
+    std::vector<float> hidden(hidden_dim);
+	// option 2: one-hot encoding
+	//  - extra param: n_leaf
+	#pragma omp parallel for
+    for (int j = 0; j < hidden_dim; ++j) {
+        float sum = b1[j];
+		for (int t = 0; t < input_dim; ++t) {
+			int leaf = input[t];
+			int idx = t * n_leafs + leaf;
+			sum += W1[j*input_dim*n_leafs + idx];
+		}
+		// ReLU
+        hidden[j] = std::max(0.0f, sum);
+    }
+
+	///////////////////// classifier ///////////////////////
+    std::vector<float> out(output_dim);
+    #pragma omp parallel for
+    for (int j = 0; j < output_dim; ++j) {
+        float sum = b2[j];
+        for (int i = 0; i < hidden_dim; ++i) {
+            sum += hidden[i] * W2[j * hidden_dim + i];
+        }
+        out[j] = sum;
+    }
+    return out;
+}
+	
+TL_predictors::TL_predictors(const std::string& model_dir) {
+	// Assume meta.log has 3 integers: input_dim hidden_dim output_dim
+    std::ifstream meta(model_dir + "/meta.log");
+    if (!meta) {
+        std::cerr << "Failed to open file: meta.log" << std::endl;
+        exit(1);
+    }
+    int in_dim, hid_dim, out_dim, leaf_num;
+    meta >> in_dim >> hid_dim >> out_dim >> leaf_num;
+
+	xgb = std::make_unique<xgb_extractor>(model_dir + "/xgb.model");
+    nn = std::make_unique<nn_predictor>(model_dir + "/mlp", in_dim, hid_dim, out_dim, leaf_num);
+	load_bias(model_dir + "/output_bias.log", output_bias, out_dim);
+}
+
+void TL_predictors::run_predictions(const std::vector<float>& core_feature, std::vector<float>& results) {
+	DMatrixHandle dmat;
+    XGDMatrixCreateFromMat(core_feature.data(), 1, core_feature.size(), -1, &dmat);
+    std::vector<float> leaf_features = xgb->extract(dmat);
+    XGDMatrixFree(dmat);
+    
+	std::vector<float> pred = nn->predict(leaf_features);
+
+	results.resize(pred.size());
+    for (size_t i = 0; i < pred.size(); ++i) {
+        results[i] = pred[i]*output_bias[i];
+    }
+}
+
+void TL_predictors::load_bias(const std::string& bias_path, std::vector<float>& bias, int expected_size){
+	bias.resize(expected_size);
+    std::ifstream in(bias_path);
+    if (!in) {
+        std::cerr << "Failed to open weight file: " << bias_path << std::endl;
+        exit(1);
+    }
+    float value;
+	for(int i=0; i<expected_size; i++){
+		in >> value;
+		bias[i] = value;
+	}
+    in.close();
+}
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+
+
+
+
+
 // Codes for CoreMapper
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+std::vector<std::unique_ptr<TL_predictors>> CoreMapper::predictors_set;
+void CoreMapper::setting_predictor_usage(const std::vector<std::string>& model_paths){
+	use_predictor=true;
+	for (const auto& path_set : model_paths) {
+		predictors_set.push_back(std::make_unique<TL_predictors>(path_set));
+	}
+}
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
 
 CoreMapper::CoreMapper(const Core& c):base_core(c){}
 
@@ -55,8 +187,8 @@ void CoreMapper::set_lr_utime(LRLayer& l) const{
 	l.set_utime(t);
 }
 
-// Codes for PolarMapper
 
+// Codes for PolarMapper
 PolarMapper::PolarMapper(const PolarCore& _core)
 	:CoreMapper(_core), core(_core){
 	for(size_t i=0;i<sizeof(PolarInst::all_parts)/sizeof(Instance::Part);++i){
@@ -66,7 +198,10 @@ PolarMapper::PolarMapper(const PolarCore& _core)
 
 CoreMapper::CoreMapping PolarMapper::genMapping(const ConvWl& wl){
 	PolarInst instance(core);
-	return instance.genMapping(wl);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	return instance.genMapping(wl, use_predictor, use_TL, TL_workpath);
+	// return instance.genMapping(wl);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
 }
 
 void PolarMapper::set_conv_utime(ConvLayer& l) const{
@@ -98,18 +233,26 @@ vol_t PolarMapper::get_ubuf_size() const{
 }
 
 // Codes for EyerissMapper
-
 EyerissMapper::EyerissMapper(const EyerissCore& _core)
 	: CoreMapper(_core), core(_core) {}
 
 CoreMapper::CoreMapping EyerissMapper::genMapping(const ConvWl& wl){
 	EyerissInst instance(core);
-	return instance.genMapping(wl);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	return instance.genMapping(wl, use_predictor, use_TL, TL_workpath);
+	// return instance.genMapping(wl);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
 }
 
 vol_t EyerissMapper::get_ubuf_size() const{
 	return core.ul2.Size;
 }
+
+
+
+
+
+
 
 // Codes for main search:
 
@@ -193,7 +336,7 @@ PolarInst::Instance(const PolarCore& _core):core(_core){
 	W_NB.BSD.cnt = -1;
 }
 
-CoreMapper::CoreMapping PolarInst::genMapping(const CoreMapper::ConvWl& wl){
+CoreMapper::CoreMapping PolarInst::genMapping(const CoreMapper::ConvWl& wl, bool use_predictor, bool use_TL, const std::string TL_workpath){
 	best_map = CoreMapping();
 
 	// For later.
@@ -706,6 +849,21 @@ void PolarInst::getCost(const ConvWl& wl){
 	return;
 }
 
+
+///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
+void PolarInst::write_TL_hyperparams(const ConvWl& wl, const std::string working_path){
+	// todo: TL to support NVDLA
+}
+
+CoreMapper::CoreMapping PolarInst::read_TL_cost(const ConvWl& wl, const std::string working_path){
+	// todo: TL to support NVDLA
+}
+///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
+
+
+
+
+
 // Codes for EyerissInst in main search
 
 EyerissInst::Instance(const EyerissCore& _core):core(_core){}
@@ -730,107 +888,181 @@ EyerissInst::Instance(const EyerissCore& _core):core(_core){}
  * 3 * 10 * 1
 */
 
-CoreMapper::CoreMapping EyerissInst::genMapping(const CoreMapper::ConvWl& wl) {
+
+
+
+///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
+CoreMapper::CoreMapping EyerissInst::genMapping(const CoreMapper::ConvWl& wl, bool use_predictor, bool use_TL, const std::string TL_workpath) {
 	best_map = CoreMapping();
+	
+	if(use_TL){
+		write_TL_hyperparams(wl, TL_workpath);
+		std::string command = "python3 ./TL_predictor/gen_TL_data/run_TL_in_Gemini.py";
+		command = command + " --working_path " + TL_workpath;
+		command += " > " + TL_workpath + "/temp.log 2>&1";
+    	std::system(command.c_str());
+		best_map = read_TL_cost(wl, TL_workpath);
+	}
+///////////////////////////////////////////////////////////// Addiing Timeloop function /////////////////////////////////////////////////////////////
 
-	tot_ifmW = (wl.W - 1) * wl.sW + wl.S;
-	tot_ifmH = (wl.H - 1) * wl.sH + wl.R;
-	ifmSize = wl.ifm_size(); //tot_ifmW * tot_ifmH * wl.C * wl.B;
-	filSize = wl.fil_size(); //wl.R * wl.S * wl.C * wl.K; // Total filter size.
-	ofmSize = wl.ofm_size(); //wl.H * wl.W * wl.K * wl.B; // Total ofmap size.
-	_al1_buf = wl.R * wl.C * wl.H * wl.B * tot_ifmW;
+	else{
+		///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+		bool has_predictor = false;
+		int predictor_id;
+		if ((wl.sW==1) && (wl.sH==1)){
+			if ((wl.S==3) && (wl.R==3) ) {  // case 1: 3x3 conv
+				predictor_id = 0;
+				has_predictor = true;
+			}
+			else if ((wl.S==1) && (wl.R==1) && (wl.W==1)){  // case 2: gemm
+				predictor_id = 1;
+				has_predictor = true;
+			}
+			else if ((wl.S==1) && (wl.R==1)){  // case 3: 1x1 conv (not matmul)
+				if (wl.K <= 512){
+					predictor_id = 2;
+					has_predictor = true;
+				}
+			}
+		}
+		if(has_predictor && use_predictor){
+			// if (predictor_id == 0){
+			// 	std::cout << "using conv_k3 predictor \n";
+			// }
+			// else if (predictor_id == 1){
+			// 	std::cout << "using gemm predictor \n";
+			// }
+			// else if (predictor_id == 2){
+			// 	std::cout << "using conv_k1 predictor \n";
+			// }
+			std::vector<float> pred_inputs = gen_predictor_input(wl, core);
+			std::vector<float> pred_results;
+			predictors_set[predictor_id]->run_predictions(pred_inputs, pred_results);
+			// # tot_util, E_weights, E_ifmap, E_psum, E_glb
+			energy_t ubuf_energy=0, buf_energy=0, noc_energy=0, mac_energy=0;
+			int layout_bias = 0*5;
+			ubuf_energy = pred_results[layout_bias+4] * wl.tot_op / 1000;
+			buf_energy  = (pred_results[layout_bias+1] + pred_results[layout_bias+2] + pred_results[layout_bias+3]) * wl.tot_op / 1000;
+			noc_energy  = 0;
+			mac_energy  = 0.17308 * wl.tot_op;
 
-	assert(core.pes.Yarray >= wl.R);
-	// Fold & replicate
-	fold_t fold_w = DIVCEIL(wl.H, core.pes.Xarray);
-	phyarr_w = static_cast<vmac_t>(DIVCEIL(wl.H, fold_w));
+			energy_t tot_energy = ubuf_energy + buf_energy + noc_energy + mac_energy;
 
-	reply_t k_reply_w = MAX(core.pes.Xarray / wl.H, 1);
-	k_reply_w = MIN(wl.K, k_reply_w);
-	reply_t reply_h = core.pes.Yarray / wl.R;
+			double util = pred_results[layout_bias+0];
+			util = MAX(0.01, util);
+			util = MIN(1, util);
+			double exp_time = wl.tot_op / (util * core.pes.Xarray*core.pes.Yarray);
+			cycle_t tot_time = exp_time;
+			double tot_util = util;
+			
+			MapCost cost(tot_energy, tot_time);
+			best_map = {cost, ubuf_energy, buf_energy, noc_energy, mac_energy, util, tot_util};
+		}
+		
+	///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+		// else using the old heuristics
+		else{
+			// std::cout << "using Gemini heuristics \n";
+			tot_ifmW = (wl.W - 1) * wl.sW + wl.S;
+			tot_ifmH = (wl.H - 1) * wl.sH + wl.R;
+			ifmSize = wl.ifm_size(); //tot_ifmW * tot_ifmH * wl.C * wl.B;
+			filSize = wl.fil_size(); //wl.R * wl.S * wl.C * wl.K; // Total filter size.
+			ofmSize = wl.ofm_size(); //wl.H * wl.W * wl.K * wl.B; // Total ofmap size.
+			_al1_buf = wl.R * wl.C * wl.H * wl.B * tot_ifmW;
 
-	len_t remain_k = DIVCEIL(wl.K, k_reply_w);
+			assert(core.pes.Yarray >= wl.R);
+			// Fold & replicate
+			fold_t fold_w = DIVCEIL(wl.H, core.pes.Xarray);
+			phyarr_w = static_cast<vmac_t>(DIVCEIL(wl.H, fold_w));
 
-	len_t total_b;
-	max_c1 = core.al1.Size / wl.S;
-	max_k1 = core.wl1.Size / (wl.S * max_c1);
-	total_b = wl.B * fold_w;
+			reply_t k_reply_w = MAX(core.pes.Xarray / wl.H, 1);
+			k_reply_w = MIN(wl.K, k_reply_w);
+			reply_t reply_h = core.pes.Yarray / wl.R;
 
-	reply_t max_kreplh, max_creplh;
-	max_kreplh = DIVCEIL(remain_k, max_k1);
-	max_kreplh = MIN(max_kreplh, reply_h);
-	max_creplh = DIVCEIL(wl.C, max_c1);
-	max_creplh = MIN(max_creplh, reply_h);
+			len_t remain_k = DIVCEIL(wl.K, k_reply_w);
 
-	reply_t c_reply_h, k_reply_h;
+			len_t total_b;
+			max_c1 = core.al1.Size / wl.S;
+			max_k1 = core.wl1.Size / (wl.S * max_c1);
+			total_b = wl.B * fold_w;
 
-	if(max_creplh * max_kreplh >= reply_h){
-		b_reply = 1;
-		Bt = total_b;
-		c_reply_h = reply_h / max_kreplh;
-		k_reply_h = reply_h / c_reply_h;
-		// Can prove now c_reply_h = reply_h / k_reply_h;
-		do{
-			// Using c&k
-			Ct = DIVCEIL(wl.C, c_reply_h);
-			Kt = DIVCEIL(remain_k, k_reply_h);
-			k_reply = k_reply_w * k_reply_h;
-			getCost(wl);
-			if(c_reply_h >= max_creplh) break;
-			k_reply_h = reply_h / (c_reply_h + 1);
-			c_reply_h = reply_h / k_reply_h;
-		}while(true);
-	}else if(max_creplh * max_kreplh * total_b >= reply_h){
-		reply_t max_breplh, rem_replh; // remain repl. h
-		// Fix k.
-		// k_reply_h = max_kreplh;
-		Kt = DIVCEIL(remain_k, max_kreplh);
-		k_reply = k_reply_w * max_kreplh;
-		rem_replh = reply_h / max_kreplh;
+			reply_t max_kreplh, max_creplh;
+			max_kreplh = DIVCEIL(remain_k, max_k1);
+			max_kreplh = MIN(max_kreplh, reply_h);
+			max_creplh = DIVCEIL(wl.C, max_c1);
+			max_creplh = MIN(max_creplh, reply_h);
 
-		max_breplh = MIN(total_b, rem_replh);
-		c_reply_h = rem_replh / max_breplh;
-		b_reply = rem_replh / c_reply_h;
-		// Can prove now c_reply_h = rem_replh / n_reply;
-		do{
-			// Using c&n
-			Ct = DIVCEIL(wl.C, c_reply_h);
-			Bt = DIVCEIL(total_b, b_reply);
-			getCost(wl);
-			if(c_reply_h >= max_creplh) break;
-			b_reply = rem_replh / (c_reply_h + 1);
-			c_reply_h = rem_replh / b_reply;
-		}while(true);
+			reply_t c_reply_h, k_reply_h;
 
-		// Fix c.
-		// c_reply_h = max_creplh;
-		Ct = DIVCEIL(wl.C, max_creplh);
-		rem_replh = reply_h / max_creplh;
+			if(max_creplh * max_kreplh >= reply_h){
+				b_reply = 1;
+				Bt = total_b;
+				c_reply_h = reply_h / max_kreplh;
+				k_reply_h = reply_h / c_reply_h;
+				// Can prove now c_reply_h = reply_h / k_reply_h;
+				do{
+					// Using c&k
+					Ct = DIVCEIL(wl.C, c_reply_h);
+					Kt = DIVCEIL(remain_k, k_reply_h);
+					k_reply = k_reply_w * k_reply_h;
+					getCost(wl);
+					if(c_reply_h >= max_creplh) break;
+					k_reply_h = reply_h / (c_reply_h + 1);
+					c_reply_h = reply_h / k_reply_h;
+				}while(true);
+			}else if(max_creplh * max_kreplh * total_b >= reply_h){
+				reply_t max_breplh, rem_replh; // remain repl. h
+				// Fix k.
+				// k_reply_h = max_kreplh;
+				Kt = DIVCEIL(remain_k, max_kreplh);
+				k_reply = k_reply_w * max_kreplh;
+				rem_replh = reply_h / max_kreplh;
 
-		max_breplh = MIN(total_b, rem_replh);
-		k_reply_h = rem_replh / max_breplh;
-		b_reply = rem_replh / k_reply_h;
-		// Can prove now k_reply_h = rem_replh / n_reply;
-		do{
-			// Using k&n
-			Kt = DIVCEIL(remain_k, k_reply_h);
-			Bt = DIVCEIL(total_b, b_reply);
-			k_reply = k_reply_w * k_reply_h;
-			getCost(wl);
-			//std::cout<<k_reply_h<<' '<<n_reply<<std::endl;
-			if(k_reply_h >= max_kreplh) break;
-			b_reply = rem_replh / (k_reply_h + 1);
-			k_reply_h = rem_replh / b_reply;
-		}while(true);
-	}else{
-		Ct = DIVCEIL(wl.C, max_creplh);
-		Kt = DIVCEIL(remain_k, max_kreplh);
-		k_reply = k_reply_w * max_kreplh;
-		b_reply = total_b;
-		Bt = 1;
-		assert(Ct <= max_c1);
-		assert(Kt <= max_k1);
-		getCost(wl);
+				max_breplh = MIN(total_b, rem_replh);
+				c_reply_h = rem_replh / max_breplh;
+				b_reply = rem_replh / c_reply_h;
+				// Can prove now c_reply_h = rem_replh / n_reply;
+				do{
+					// Using c&n
+					Ct = DIVCEIL(wl.C, c_reply_h);
+					Bt = DIVCEIL(total_b, b_reply);
+					getCost(wl);
+					if(c_reply_h >= max_creplh) break;
+					b_reply = rem_replh / (c_reply_h + 1);
+					c_reply_h = rem_replh / b_reply;
+				}while(true);
+
+				// Fix c.
+				// c_reply_h = max_creplh;
+				Ct = DIVCEIL(wl.C, max_creplh);
+				rem_replh = reply_h / max_creplh;
+
+				max_breplh = MIN(total_b, rem_replh);
+				k_reply_h = rem_replh / max_breplh;
+				b_reply = rem_replh / k_reply_h;
+				// Can prove now k_reply_h = rem_replh / n_reply;
+				do{
+					// Using k&n
+					Kt = DIVCEIL(remain_k, k_reply_h);
+					Bt = DIVCEIL(total_b, b_reply);
+					k_reply = k_reply_w * k_reply_h;
+					getCost(wl);
+					//std::cout<<k_reply_h<<' '<<n_reply<<std::endl;
+					if(k_reply_h >= max_kreplh) break;
+					b_reply = rem_replh / (k_reply_h + 1);
+					k_reply_h = rem_replh / b_reply;
+				}while(true);
+			}else{
+				Ct = DIVCEIL(wl.C, max_creplh);
+				Kt = DIVCEIL(remain_k, max_kreplh);
+				k_reply = k_reply_w * max_kreplh;
+				b_reply = total_b;
+				Bt = 1;
+				assert(Ct <= max_c1);
+				assert(Kt <= max_k1);
+				getCost(wl);
+			}
+		}
 	}
 	best_map *= wl.nGroup;
 	return best_map;
@@ -884,7 +1116,7 @@ CoreMapper::CoreMapping EyerissInst::genMapping(const CoreMapper::ConvWl& wl) {
  *
  * Variables needed for energy:
  * replN, K1, K2, C2
- */
+ */\
 
 void EyerissInst::getCost(const CoreMapper::ConvWl& wl) {
 	access_t al1_r, al1_w, wl1_r, wl1_w, pl1_r, pl1_w, ul2_r, ul2_w; // ul2_w will be calculated out of intra-core cost.
@@ -966,6 +1198,117 @@ void EyerissInst::getCost(const CoreMapper::ConvWl& wl) {
 		best_map = {cost, ubuf_energy, buf_energy, noc_energy, mac_energy, util, tot_util};
 	}
 }
+
+
+
+
+///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+void EyerissInst::write_TL_hyperparams(const ConvWl& wl, const std::string working_path){
+	
+	// Prior work suggest 100% utilization rate of PE
+	// Therefore, we obtain a more realistic utilization rate by timeloop
+	// Provide the following information to the python script:
+
+	// step 1: write param to .txt file
+	std::ofstream param_file;
+	param_file.open(working_path+"/prob_data.txt");
+	// -- stream out all wl parameters using space as delimiter
+	param_file << wl.B <<  " " << wl.W <<  " " << wl.H << " " 
+	           << wl.C <<  " " << wl.K <<  " " 
+			   << wl.S <<  " " << wl.R <<  " " 
+			   << wl.sW << " " << wl.sH << "\n";
+	param_file.close();
+
+	std::ofstream arch_file;
+	arch_file.open(working_path+"/arch_data.txt");
+	// -- stream out all core parameters using space as delimiter
+	arch_file << core.ul2.Size << " " << core.pes.Xarray << " " << core.pes.Yarray << "\n";
+	arch_file.close();
+}
+
+
+CoreMapper::CoreMapping EyerissInst::read_TL_cost(const CoreMapper::ConvWl& wl, const std::string working_path){
+	std::ifstream in(working_path+"/costs.txt");
+	// # tot_util, E_weights, E_ifmap, E_psum, E_glb
+	double tot_time;
+	double E_wl1, E_al1, E_pl1, E_ubuf;
+    in >> tot_time >> E_wl1 >> E_al1 >> E_pl1 >> E_ubuf;
+	
+	energy_t ubuf_energy=0, buf_energy=0, noc_energy=0, mac_energy=0;
+	int layout_bias = 0*5;
+	ubuf_energy = E_ubuf * wl.tot_op / 1000;
+	buf_energy  = (E_wl1 + E_al1 + E_pl1) * wl.tot_op / 1000;
+	noc_energy  = 0;
+	mac_energy  = 0.173 * wl.tot_op;
+
+	energy_t tot_energy = ubuf_energy + buf_energy + noc_energy + mac_energy;
+
+	double util = wl.tot_op / (tot_time * core.pes.Xarray*core.pes.Yarray);
+	double tot_util = util;
+	
+	MapCost cost(tot_energy, tot_time);
+	best_map = {cost, ubuf_energy, buf_energy, noc_energy, mac_energy, util, tot_util};
+	return best_map;
+}
+///////////////////////////////////////////////////////////// Addiing Timeloop simulation ///////////////////////////////////////////////////////////
+
+
+
+
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+std::vector<float> EyerissInst::gen_predictor_input(const ConvWl& wl, const Core& c) {
+	
+	float B, W, H, C_I, K_W, K_H, C_O;
+    float meshX, meshY, Ubuf_width, Ubuf_size;
+	float ifm_size, ofm_size, wgh_size, PE_size, H_x_res, CO_x_res, CO_xy_res, KH_y_res, CI_y_res, CO_y_res;
+
+	B   = wl.B;
+	W   = wl.W;
+	H   = wl.H;
+	C_I = wl.C;
+	K_W = wl.S;
+	K_H = wl.R;
+	C_O = wl.K;
+
+	meshX = core.pes.Xarray;
+	meshY = core.pes.Yarray;
+	Ubuf_size  = core.ul2.Size;
+
+	ifm_size = B * W * H * C_I;
+    ofm_size = B * W * H * C_O;
+    wgh_size = C_O * C_I * K_W * K_H;
+    PE_size   = meshX*meshY;
+    H_x_res   = H   / meshX;
+    CO_x_res  = C_O / meshX;
+    CO_xy_res = C_O / PE_size;
+    KH_y_res  = K_H / meshY;
+    CI_y_res  = C_I / meshY;
+    CO_y_res  = C_O / meshY;
+
+	std::vector<float> input = {
+        B, W, H, C_I, C_O, 
+        meshX, meshY, Ubuf_size,
+		ifm_size, ofm_size, wgh_size, log2(meshX), log2(meshY)};
+
+	auto find_util = [](float data, std::vector<float>& input_o) {
+		float result;
+		for (int i = 0; i <= 6; i++) {
+			result = data / static_cast<float>( ((static_cast<int>(data) + ((1 << i) - 1)) >> i) << i );
+			input_o.push_back(result);
+		}
+	};
+	
+	find_util(B,   input);
+	find_util(H,   input);
+	find_util(C_O, input);
+	find_util(K_H, input);
+	find_util(C_I, input);
+
+	return input;
+}
+///////////////////////////////////////////////////////////// Addiing performance predictors /////////////////////////////////////////////////////////////
+
+
 
 // Codes for CoreMapper::ConvWl
 

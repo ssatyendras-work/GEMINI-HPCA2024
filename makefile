@@ -1,6 +1,6 @@
 CXX      := g++
 CXXFLAGS := -Wall -Wextra --std=c++17
-LDFLAGS  := -L/usr/lib -lstdc++ -lm -lpthread
+LDFLAGS  := -L/usr/lib -lstdc++ -lm -lpthread -lxgboost
 BUILD    := ./build
 OBJ_DIR  := $(BUILD)/objects
 APP_DIR  := $(BUILD)

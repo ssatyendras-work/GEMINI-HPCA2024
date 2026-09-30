@@ -1,2 +1,3 @@
-pandas
-openpyxl
+xgboost==1.6.0
+scikit-learn
+torch

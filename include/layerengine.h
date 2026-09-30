@@ -29,6 +29,11 @@ public:
 	// TODO: put it somewhere else.
 	virtual vol_t get_ubuf_size() const = 0;
 	virtual LayerScheme fillin(LNode* curNode, const Light_placement &place, bool calc_noc = true,bool base=false) = 0;
+
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	virtual void set_TL_usage(bool on) = 0;
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+
 };
 
 class StdLayerEngine : public LayerEngine{
@@ -42,6 +47,11 @@ public:
 	void calcNoC(NoC& noc, const PlaceSch& place, LNode* curNode, bool unordered = false) const;
 	void calcNoC(NoC& noc, const PlaceSch& place, const Light_placement& light_place, LNode* curNode, bool unordered = false) const;
 	virtual LayerScheme fillin(LNode* curNode, const Light_placement &place, bool calc_noc = true,bool base=false);
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	void set_TL_usage(bool on) override {
+        if (mapper) mapper->setting_TL_usage(on);
+    }
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
 };
 
 class FastLayerEngine : public LayerEngine {
@@ -55,6 +65,11 @@ public:
 	PartSch fast_get_part(Cluster c, const Node& layerT, len_t num_batch);
 	
 	//void calcNoC(NoC& noc, const PlaceSch& place, LNode* curNode) const;
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
+	void set_TL_usage(bool on) override {
+        if (mapper) mapper->setting_TL_usage(on);
+    }
+	///////////////////////////////////////////////////////////// Addiing Timeloop /////////////////////////////////////////////////////////////
 };
 
 #endif // LAYERENGINE_H
