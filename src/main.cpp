@@ -1,3 +1,4 @@
+#include "technology.h"
 #include <iostream>
 #include <fstream>
 #include "schnode.h"
@@ -844,7 +845,14 @@ double wafer_util(double area) {
 	}
 }
 int main(int argc, char** argv){
-	unsigned int seed = time(NULL);
+	if (argc > 1 && std::string(argv[1]) == "--dump-technology") {  // chess/main: print the built-in Technology of a stdin line as a file
+		string t, pk, io, dd; int skip; string s_;
+		cin >> t >> skip >> skip >> skip >> skip >> skip >> skip >> skip >> skip >> skip >> skip >> pk >> io >> skip >> dd;
+		Technology::builtin(t, pk, io, dd).dump(std::cout);
+		return 0;
+	}
+	const char* seed_env = getenv("GEMINI_SEED");  // chess/main: a fixed seed makes two runs comparable
+	unsigned int seed = seed_env ? (unsigned int)atol(seed_env) : time(NULL);
 	srand(seed);
 	cout << "Seed: " << seed << " ";
 	std::cout.precision(4);
@@ -885,96 +893,23 @@ int main(int argc, char** argv){
 		throw runtime_error("Chiplet partition is invalid.");
 	}
     
-	double scale_factor = 0;
-	double power_factor = 0;
-	if(tech == "7"){
-		scale_factor = 0.7;
-		power_factor = 0.7;
-		SchNode::frequency = 1.3;//GHz
-	}
-	else if(tech == "12"){
-		scale_factor = 1;
-		power_factor = 1;
-		SchNode::frequency = 1;//GHz
-	}
+	// chess/main (T3): every technology number comes from one Technology, built in or loaded from "@<file>".
+	Technology T = tech.rfind("@", 0) == 0 ? Technology::load(tech.substr(1)) : Technology::builtin(tech, package_type, IO_type, DDR_type);
+	tech = T.node;
+	SchNode::frequency = T.frequency_ghz;
+	double scale_factor = T.scale_factor;
+	double power_factor = T.power_factor;
+	(void)scale_factor;
 	//DENSITY
-	density_t SRAM_den = 0.0964 * 8 * scale_factor;
-	density_t MAC_den = 57.9 * scale_factor;//8-bit
+	density_t SRAM_den = T.sram_den;
+	density_t MAC_den = T.mac_den;//8-bit
 	density_t LR_mac_den = MAC_den * 8;
-	density_t NoC_den = 16781.312*scale_factor;
-	density_t NoP_den = 0;
-	density_t DDR_PHY_den = 0;
-	density_t DDR_ctrl_den = 0;
-	// density_t NoP_len = 333; 
-	// density_t NoP_wid = 800;
-	// density_t DDR_PHY_den = 6.53 * 1000000;
-	// density_t DDR_ctrl_den = 510 * 1000 * 0.09;
-	//double yield = 0.9;
-	double ddr_cost = 0;
-	//NoP_den and NoP_hop_cost
-	// if(package_type == "OS" && IO_type == "Serdes"){
-	// 	NoP_den = 333 * 800 ;
-	// 	NoC::NoP_hop_cost = 2 * 8 ;
-	// 	NoC::serdes=true;
-	// 	SchNode::serdes=true;
-	// }
-	// else if(package_type == "OS" && IO_type == "UCIe"){
-	// 	NoP_den = 333 * 800 ;
-	// 	NoC::NoP_hop_cost = 3.3 * 8 ;
-	// 	NoC::serdes=false;
-	// 	SchNode::serdes=false;
-	// }
-	// else if(package_type == "FO" && IO_type == "Serdes"){
-	// 	NoP_den = 333 * 800 ;
-	// 	NoC::NoP_hop_cost = 2 * 8 ;
-	// 	NoC::serdes=true;
-	// 	SchNode::serdes=true;
-	// }
-	// else if(package_type == "FO" && IO_type == "UCIe"){
-	// 	NoP_den = 333 * 800 ;
-	// 	NoC::NoP_hop_cost = 3.3 * 8 ;
-	// 	NoC::serdes=false;
-	// 	SchNode::serdes=false;
-	// }
-	// else if(package_type == "SI" && IO_type == "Serdes"){
-	// 	NoP_den = 333 * 800 ;
-	// 	NoC::NoP_hop_cost = 3.3 * 8 ;
-	// 	NoC::serdes=true;
-	// 	SchNode::serdes=true;
-	// }
-	// else if(package_type == "SI" && IO_type == "UCIe"){
-	// 	NoP_den = 333 * 800 ;
-	// 	NoC::NoP_hop_cost = 3.3 * 8 ;
-	// 	NoC::serdes=false;
-	// 	SchNode::serdes=false;
-	// }
-	// else{
-	// 	throw runtime_error("Package type or IO type not supported.");
-	// }
-
-	
-	//DDR
-	if(DDR_type == "LPDDR5"){//not use
-		DDR_PHY_den = 0 ;
-		DDR_ctrl_den = 0 * scale_factor;
-		ddr_cost = 0;
-		NoC::DRAM_acc_cost = 0;
-	}
-	else if(DDR_type == "GDDR6X"){
-		DDR_PHY_den = 5940*1100/(14/8*32) ; //GB/μm2
-		DDR_ctrl_den = 0 * 0.09 * scale_factor/(14/8*32);
-		ddr_cost = 3.5/(14/8*32);
-		NoC::DRAM_acc_cost = 10.5 * 8;
-	}
-	else if(DDR_type == "HBM"){//not use
-		DDR_PHY_den = 502665/819;// GB/μm2
-		DDR_ctrl_den = 0 * scale_factor;
-		ddr_cost = 320/819; //dolar/GB
-		NoC::DRAM_acc_cost = 5.5 * 8;
-	}
-	else{
-		throw runtime_error("DDR type not supported.");
-	}
+	density_t NoC_den = T.noc_den;
+	density_t NoP_den = T.nop_den;
+	density_t DDR_PHY_den = T.ddr_phy_den;
+	density_t DDR_ctrl_den = T.ddr_ctrl_den;
+	double ddr_cost = T.ddr_cost;
+	NoC::DRAM_acc_cost = T.dram_acc_cost;
 
 	std::uint16_t vector_len;
 	std::uint16_t lane_len;
@@ -1002,16 +937,16 @@ int main(int argc, char** argv){
 		throw runtime_error("MAC scale not supported·");
 	}
 	NoC::seperate_IO = true;
-	double turnover_factor = 0.3/0.5;
+	double turnover_factor = T.turnover_factor;
 	ofm_ubuf_vol = 10 KB;
 	// NoC::NoP_hop_cost = 2 * 8; //DSE->3.3*8 ; Simba->2*8
-	NoC::NoC_hop_cost = 0.4 * 8 * power_factor;
+	NoC::NoC_hop_cost = T.noc_hop_cost;
 	
-	energy_t LR_mac_cost = 0.0873 * power_factor; //IEEE FP16
+	energy_t LR_mac_cost = T.lr_mac_cost; //IEEE FP16
 	Core::numMac_t LR_mac_num = vector_len * lane_len * 16 / 16;
 	PolarCore::Buffer al1, wl1, ol1, al2, wl2, ol2, ul3;
-	PolarCore::PESetting s(vector_len, lane_len, 0.018);
-	PolarCore::Bus bus(4, 4, 0.018, 64);
+	PolarCore::PESetting s(vector_len, lane_len, T.mac_cost);
+	PolarCore::Bus bus(4, 4, T.mac_cost, 64);
 	al1.Size = 8 * vector_len / 8 KB; 
 	ol1.Size = 2 * lane_len / 8 KB; 
 	wl1.Size = 4 * lane_len*vector_len / 64 KB; 
@@ -1035,61 +970,25 @@ int main(int argc, char** argv){
 	else if (compute_die_num == 2) {
 		NoP_side_num = 2;
 		IO_die_num = 4;
-		if(IO_type == "XSR"){
+		if(T.serdes){
 			serdes_number = Cluster::ylen*2+2*Cluster::ylen*2;
 		}
 	}
 	else {
 		NoP_side_num = 4;
 		IO_die_num = 4;
-		if(IO_type == "XSR"){
+		if(T.serdes){
 			serdes_number = Cluster::ylen*2+2*Cluster::ylen*NoC::x_cut+2*Cluster::xlen*NoC::y_cut;
 		}
 	}
 
-	if(IO_type == "XSR"){
-		NoC::serdes=true;
-		SchNode::serdes=true;
-		if(tech == "12"){
-			SchNode::serdes_power = 97.44;//mW 112G XSR per lane
-			NoP_den = 960.816*1339.008/112;
-			SchNode::serdes_lane_total = NoP_bw*8/112*serdes_number;
-		}else if(tech == "7"){
-			SchNode::serdes_power = 97.44*0.5/0.7;//mW 112G XSR per lane
-			NoP_den = 1020*1060/112;
-			SchNode::serdes_lane_total = NoP_bw*8/112*serdes_number;
-		}
-		
-	}else if(IO_type == "USR"){
-		NoC::serdes=false;
-		SchNode::serdes=false;
-		if(tech == "12"){
-			NoP_den = 960.816*1339.008/56 ;//mW 56G USR per lane
-			NoC::NoP_hop_cost = 2.4 * 8 ;
-		}
-		else if(tech == "7"){
-			NoP_den = 1020*1060/56 ;
-			NoC::NoP_hop_cost = 1.7 * 8 ;
-		}else{
-			throw runtime_error("IO type not supported.");
-		}
-	}else if(IO_type == "UCIe"){
-		NoC::serdes=false;
-		SchNode::serdes=false;
-		if(package_type == "SI"){
-			NoP_den = 1000*1000/947 ;
-			NoC::NoP_hop_cost = 0.3 * 8 ;
-		}
-		else if(package_type == "FO"){
-			NoP_den = 1000*1000/631 ;
-			NoC::NoP_hop_cost = 0.6 * 8 ;
-		}
-		else if(package_type == "OS"){
-			NoP_den = 1000*1000/145 ;
-			NoC::NoP_hop_cost = 1 * 8 ;
-		}
-	}else{
-		throw runtime_error("IO type not supported.");
+	NoC::serdes = T.serdes;
+	SchNode::serdes = T.serdes;
+	if (T.serdes) {
+		SchNode::serdes_power = T.serdes_power_mw;
+		SchNode::serdes_lane_total = NoP_bw*8/static_cast<bw_t>(T.serdes_lane_gbps)*serdes_number;
+	} else {
+		NoC::NoP_hop_cost = T.nop_hop_cost;
 	}
 	//COST
 	// double cost_silicon_mm_compute = 0.084887 ;
@@ -1098,9 +997,9 @@ int main(int argc, char** argv){
 	// double os_area_scale_factor = 4;// os area will be larger than chip
 	// double ddr_cost = 3.5;//per 16bithttps://www.dramexchange.com/
 	// double os_ocst_factor;//larger os will be more expensive 
-	double post_layout_scale = 2.2; 
-	double control_unit_prop = 1.05;
-	double DFT_prop = 1.05;
+	double post_layout_scale = T.post_layout_scale;
+	double control_unit_prop = T.control_unit_prop;
+	double DFT_prop = T.dft_prop;
 
 	//*********************DIE AREA*********************
 	double sram_area_per_core = (ul3_ + (al1.Size + wl1.Size + ol1.Size)*16) * SRAM_den;
@@ -1134,12 +1033,12 @@ int main(int argc, char** argv){
 
 	// Check if areas are too large.
 	if (compute_die_num == 1) {
-		if (total_die_area > 858) {
+		if (total_die_area > T.max_die_area_mm2) {
 			cout << "`total_die_area` too large." << endl;
 			return 1;
 		}
 	}else{
-		if(IO_die_area>858 || compute_die_area>858) {
+		if(IO_die_area>T.max_die_area_mm2 || compute_die_area>T.max_die_area_mm2) {
 			cout << "`IO_die_area` or `compute_die_area` too large." << endl;
 			return 1;
 		}
@@ -1214,10 +1113,10 @@ int main(int argc, char** argv){
 	wl1.WCost = buffer(vector_len * 8, wl1.Size)[1] * 8 * turnover_factor * power_factor;
 	ol1.RCost = buffer(lane_len * 16, ol1.Size)[0] * 8 * turnover_factor * power_factor;
 	ol1.WCost = buffer(lane_len * 16, ol1.Size)[1] * 8 * turnover_factor * power_factor;
-	ol2.RCost = 0.07648125 * 8 * ul3_ / (1024 KB) * turnover_factor * power_factor;// ol2 is a small part of ul3
-	ol2.WCost = 0.0989875 * 8 * ul3_ / (1024 KB) *turnover_factor * power_factor;
-	ul3.RCost = 0.217125 * 8 * ul3_ /(1024 KB) * turnover_factor * power_factor; 
-	ul3.WCost = 0.234025 * 8 * ul3_ /(1024 KB)* turnover_factor * power_factor;  
+	ol2.RCost = T.ol2_read * ul3_ / (1024 KB) * turnover_factor;// ol2 is a small part of ul3
+	ol2.WCost = T.ol2_write * ul3_ / (1024 KB) *turnover_factor;
+	ul3.RCost = T.ul3_read * ul3_ /(1024 KB) * turnover_factor;
+	ul3.WCost = T.ul3_write * ul3_ /(1024 KB)* turnover_factor;
 	al2.RCost = al2.WCost = 0 * power_factor;
 	wl2.RCost = wl2.WCost = 0 * power_factor;
 	
@@ -1225,10 +1124,10 @@ int main(int argc, char** argv){
 	PolarMapper mapper(core);
 
 	EyerissCore::Buffer _al1, _wl1, pl1, ul2;
-	EyerissCore::PESetting s2(mac_dim, mac_dim, 0.018);
-	EyerissCore::Bus ibus(0.018, 64);
-	EyerissCore::Bus wbus(0.018, 64);
-	EyerissCore::Bus pbus(0.018, 64); // ifmap RC, weight RCK, psum RK
+	EyerissCore::PESetting s2(mac_dim, mac_dim, T.mac_cost);
+	EyerissCore::Bus ibus(T.mac_cost, 64);
+	EyerissCore::Bus wbus(T.mac_cost, 64);
+	EyerissCore::Bus pbus(T.mac_cost, 64); // ifmap RC, weight RCK, psum RK
 
 	_al1.Size = 32;
 	pl1.Size = 1;
