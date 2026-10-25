@@ -259,6 +259,8 @@ class SCut : public Cut{
 	const std::vector<lid_t> stage;
 	const lid_t num_stage;
 public:
+	lid_t get_num_stage() const { return num_stage; }  // chess (E6)
+public:
 	//SCut(const Bitset& _layers, len_t _bgrp, const Cluster& _c, csn_ptr _parent);
 	SCut(LTreeNode* _node, const Cluster& _c, cut_ptr _parent, bool usefillin = false, const Light_placement& place = Light_placement(),  bool fast_mode = false,bool base=false, bool calc_noc = true);
 	//virtual SchCost search(lid_t depth) override;

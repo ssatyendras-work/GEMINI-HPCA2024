@@ -556,6 +556,12 @@ void LNode::print_struct(std::string pad, std::ostream& os) const{
 	
 	os << " NoCtime = " << noc.get_time()/frequency << " NocBW = " << NoC::NoC_bw << " Computing_time = " << tileSch.cost.time;
 	os << "DDR_access 0 1 2 3 =" << noc.get_DRAM_acc(0) << "," << noc.get_DRAM_acc(1) << "," << noc.get_DRAM_acc(2) << "," << noc.get_DRAM_acc(3) << ",";
+	// chess (E6): the cores this layer runs on, as grid positions x.y
+	os << " cores=";
+	for (cidx_t i = 0; i < cluster.num_cores(); ++i) {
+		pos_t q = cluster[i];
+		os << (i ? "," : "") << (int)q.x << '.' << (int)q.y;
+	}
 	os << std::endl;
 	if(parent == nullptr || parent->is_DRAM_cut()){
 		os << pad << "NoC info:";
@@ -687,6 +693,7 @@ Cut::~Cut(){
 void Cut::print_struct(std::string pad, std::ostream& os) const{
 	os << pad << ((type == NodeType::S)?'S':'T');
 	os << ' ' << num_batch << '/' << num_bgrp;
+	if (type == NodeType::S) os << " stages=" << static_cast<const SCut*>(this)->get_num_stage();  // chess (E6): pipeline depth of a spatial cut
 	os << ' ' << cost << " Ubuf/Buf/Bus/Mac:" << ubuf_energy << '/' << buf_energy << '/' << bus_energy << '/' << mac_energy;
 	os << " NoC energy = " << noc.get_NoC_hop_cost() << " NoP energy = " << (serdes? cost.time*serdes_lane_total*serdes_power : noc.get_NoP_hop_cost()) << " DRAM energy = " << noc.get_tot_DRAM_cost();
 	os << ' ' << noc; //<< ' ' << buf_usage << ' ' << wgt_usage << ' ' << ifm_usage;
