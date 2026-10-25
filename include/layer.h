@@ -4,6 +4,7 @@
 #include <cstdint>
 //#include <iostream>
 #include <string>
+#include <vector>
 #include "util.h"
 struct PartSch;
 struct FetchSch;
@@ -52,6 +53,7 @@ class Layer{
 protected:
 	std::string name;
 	utime_t unit_time;
+	std::vector<utime_t> unit_time_types;  // H3: per chiplet type (unit_time is the package value)
 	// Ifm_shape contains padding.
 	fmap_shape ifm_shape, ofm_shape, wgt_shape;
 	bwidth_t bitwidth;
@@ -63,6 +65,8 @@ public:
 	const std::string& get_name() const;
 	utime_t get_utime() const;
 	void set_utime(utime_t time);
+	utime_t get_utime(int chiplet_type) const;  // H3
+	void set_utime_types(const std::vector<utime_t>& times);  // H3
 	const fmap_shape& tot_ifmap_shape() const;
 	const fmap_shape& ofmap_shape() const;
 	const fmap_shape& weight_shape() const;

@@ -100,6 +100,7 @@ public:
 	const Node& operator[](lid_t id) const;
 	bool has_dep(const Bitset& src, const Bitset& dst) const;
 	void set_utime(const CoreMapper& mapper) const;
+	void set_utime(const class ChipletMap& chiplets) const;  // H3: per chiplet type and the package value
 	lid_t len() const;
 	bool is_chain() const;
 	void cal_not_conv(Bitset& not_conv_layers) const;

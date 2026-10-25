@@ -1,4 +1,5 @@
 #include "network.h"
+#include "chiplets.h"
 
 #include <cassert>
 #include <iostream>
@@ -246,6 +247,28 @@ void Network::set_utime(const CoreMapper& mapper) const{
 	for(const Node& n:layers){
 		Layer& l = const_cast<Layer&>(n.layer());
 		mapper.set_utime(l);
+	}
+}
+
+void Network::set_utime(const ChipletMap& chiplets) const{
+	for(const Node& n:layers){
+		Layer& l = const_cast<Layer&>(n.layer());
+		if(chiplets.single()){
+			chiplets.type(0).mapper->set_utime(l);
+			continue;
+		}
+		// every type's own unit time; the package value is the cores' harmonic mean (the layer spread over the package)
+		std::vector<utime_t> times;
+		double inv = 0, cores = 0;
+		for(const ChipletType& t: chiplets.types){
+			t.mapper->set_utime(l);
+			times.push_back(l.get_utime());
+			double nc = static_cast<double>(t.num_chiplets) * chiplets.cores_per_chiplet();
+			if(nc > 0 && l.get_utime() > 0) inv += nc / l.get_utime();
+			cores += nc;
+		}
+		l.set_utime(inv > 0 ? cores / inv : 0);
+		l.set_utime_types(times);
 	}
 }
 

@@ -89,9 +89,12 @@ Cluster::allocRes_t Cluster::try_alloc(utime_t* ops, cidx_t childNum, utime_t to
 	if (!base) {
 		cidx_t remainNodes = totalNodes;
 		utime_t remainOps = totOps;
+		cidx_t remainChildren = childNum;
 
-
-		while (remainOps > 0) {
+		// chess H3: loop until every child is placed. Upstream looped while remainOps > 0, which is the same
+		// condition when the unit times are exact binary fractions (ops / a power-of-two MAC count) but leaves a
+		// rounding residue with the mixed-package unit times (harmonic means), and then ran out of nodes.
+		while (remainChildren > 0) {
 			assert(remainNodes > 0);
 			/*
 			if (remainNodes == 0){
@@ -127,6 +130,7 @@ Cluster::allocRes_t Cluster::try_alloc(utime_t* ops, cidx_t childNum, utime_t to
 				remainNodes -= ++allocRes[cur_idx];
 				remainOps -= ops[cur_idx];
 				isPlaced[cur_idx] = true;
+				--remainChildren;
 				double cur_mtime = ops[cur_idx] / static_cast<double>(allocRes[cur_idx]);
 				max_time = MAX(max_time, cur_mtime);
 			} while (--addNodes > 0);

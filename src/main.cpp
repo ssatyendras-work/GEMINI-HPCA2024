@@ -1,4 +1,5 @@
 #include "technology.h"
+#include "chiplets.h"
 #include <iostream>
 #include <fstream>
 #include "schnode.h"
@@ -699,119 +700,7 @@ void LP_search(lid_t num_layer, len_t tot_batch, Cluster& c, WholeSch& w_sch, bo
 	return;
 }
 
-std::vector<double> buffer(int width, vol_t size) {
-	vector<double> access;//per byte 0 is read, 1 is write
-	access.resize(2);
-	vol_t size_;
-	if (width >= 512) {
-		size_ = size / (width / 256);
-		access = buffer(256, size_);
-		access[0] *= sqrt(size / size_);
-		access[1] *= sqrt(size / size_);
-		return access;
-	}
-	if (width == 256) {
-		if (size == 32 KB) {
-			access[0] = 0.065678125;
-			access[1] = 0.0641375;
-		}
-		else if (size == 16 KB) {
-			access[0] = 0.06311875;
-			access[1] = 0.05563125;
-		}
-		else if (size == 8 KB) {
-			access[0] = 0.051290625;
-			access[1] = 0.04560625 ;
-		}
-		else if (size == 4 KB) {
-			access[0] = 0.049;
-			access[1] = 0.064;
-		}
-		else {
-			throw runtime_error("Cannot find buffer energy.");
-		}
-	}
-	if (width == 128) {
-		if (size == 32 KB) {
-			access[0] = 0.106675;
-			access[1] = 0.10539375;
-		}
-		else if (size == 16 KB) {
-			access[0] = 0.06848125;
-			access[1] = 0.06684375;
-		}
-		else if (size == 8 KB) {
-			access[0] = 0.06553125;
-			access[1] = 0.057975;
-		}
-		else if (size == 4 KB) {
-			access[0] = 0.05336875;
-			access[1] = 0.0476625;
-		}
-		else if (size == 2 KB) {
-			access[0] = 0.06025625;
-			access[1] = 0.06025625;
-		}
-		else {
-			throw runtime_error("Cannot find buffer energy.");
-		}
-	}
-	if (width == 64) {
-		if (size == 32 KB) {
-			access[0] = 0.194775;
-			access[1] = 0.1923;
-		}
-		else if (size == 16 KB) {
-			access[0] = 0.112;
-			access[1] = 0.110675;
-		}
-		else if (size == 8 KB) {
-			access[0] = 0.0740875;
-			access[1] = 0.0722625;
-		}
-		else if (size == 4 KB||size == 4.5 KB) {
-			access[0] = 0.0703625;
-			access[1] = 0.0626625;
-		}
-		else if (size == 2 KB) {
-			access[0] = 0.057525;
-			access[1] = 0.051775;
-		}
-		else {
-			throw runtime_error("Cannot find buffer energy.");
-		}
-	}
-	if (width == 32) {
-		if (size == 32 KB) {
-			access[0] = 0.194775;
-			access[1] = 0.1923;
-		}
-		else if (size == 16 KB) {
-			access[0] = 0.112;
-			access[1] = 0.110675;
-		}
-		else if (size == 8 KB) {
-			access[0] = 0.11608;
-			access[1] = 0.13898;
-		}
-		else if (size == 4 KB) {
-			access[0] = 0.07422;
-			access[1] = 0.09414;
-		}
-		else if (size == 2 KB) {
-			access[0] = 0.06326;
-			access[1] = 0.08034;
-		}
-		else if (size == 1 KB) {
-			access[0] = 0.07952;
-			access[1] = 0.0981;
-		}
-		else {
-			throw runtime_error("Cannot find buffer energy.");
-		}
-	}
-	return access;
-}
+// buffer(): the SRAM access-energy table lives in chiplets.cpp (H3).
 double wafer_util(double area) {
 	if (	 area <= 25000000) {
 		return 0.865;
@@ -861,6 +750,15 @@ int main(int argc, char** argv){
 	int mm, nn, xx, yy, ss, bb, rr, ff, xcut, ycut, _NoP_bw, _DRAM_bw, _NoC_bw, _mac_dim, _ul3, total_tops;
 	string tech, package_type, IO_type, DDR_type;
 	cin >> tech >> mm >> nn >> xx >> yy >> ss >> bb >> rr >> ff >> xcut >> ycut >> package_type >> IO_type >> _NoP_bw >> DDR_type >> _DRAM_bw >> _NoC_bw >> _mac_dim >> _ul3 >> total_tops;
+	// chess H3: an optional 21st token `@<chiplet map>` gives every chiplet its core type and technology (see include/chiplets.h)
+	string chiplet_path;
+	{
+		string tok;
+		if (cin >> tok) {
+			if (tok.rfind("@", 0) == 0) chiplet_path = tok.substr(1);
+			else throw runtime_error("unexpected token after total_tops: " + tok);
+		}
+	}
 	// assert(total_tops == 2*xx*yy*_mac_dim*_mac_dim);
 	//mm means core_microarch: 0 means PolarCore (NVDLA-STYLE), which is recommenmanded; 1 means Eyeriss Core.
 	//nn means network choice
@@ -897,66 +795,23 @@ int main(int argc, char** argv){
 	Technology T = tech.rfind("@", 0) == 0 ? Technology::load(tech.substr(1)) : Technology::builtin(tech, package_type, IO_type, DDR_type);
 	tech = T.node;
 	SchNode::frequency = T.frequency_ghz;
-	double scale_factor = T.scale_factor;
-	double power_factor = T.power_factor;
-	(void)scale_factor;
-	//DENSITY
-	density_t SRAM_den = T.sram_den;
-	density_t MAC_den = T.mac_den;//8-bit
-	density_t LR_mac_den = MAC_den * 8;
-	density_t NoC_den = T.noc_den;
+	//DENSITY (package level: the IO die and the NoP PHY take the base technology; a chiplet type's node terms are its own)
 	density_t NoP_den = T.nop_den;
 	density_t DDR_PHY_den = T.ddr_phy_den;
 	density_t DDR_ctrl_den = T.ddr_ctrl_den;
 	double ddr_cost = T.ddr_cost;
 	NoC::DRAM_acc_cost = T.dram_acc_cost;
-
-	std::uint16_t vector_len;
-	std::uint16_t lane_len;
-	if (mac_dim == 512) {
-		vector_len = 4;
-		lane_len = 8;
-	}
-	else if (mac_dim == 1024) {
-		vector_len = 8;
-		lane_len = 8;
-	}
-	else if (mac_dim == 2048) {
-		vector_len = 8;
-		lane_len = 16;
-	}
-	else if (mac_dim == 4096) {
-		vector_len = 16;
-		lane_len = 16;
-	}
-	else if (mac_dim == 8192) {
-		vector_len = 16;
-		lane_len = 32;
-	}
-	else {
-		throw runtime_error("MAC scale not supported·");
-	}
 	NoC::seperate_IO = true;
-	double turnover_factor = T.turnover_factor;
 	ofm_ubuf_vol = 10 KB;
-	// NoC::NoP_hop_cost = 2 * 8; //DSE->3.3*8 ; Simba->2*8
-	NoC::NoC_hop_cost = T.noc_hop_cost;
-	
-	energy_t LR_mac_cost = T.lr_mac_cost; //IEEE FP16
-	Core::numMac_t LR_mac_num = vector_len * lane_len * 16 / 16;
-	PolarCore::Buffer al1, wl1, ol1, al2, wl2, ol2, ul3;
-	PolarCore::PESetting s(vector_len, lane_len, T.mac_cost);
-	PolarCore::Bus bus(4, 4, T.mac_cost, 64);
-	al1.Size = 8 * vector_len / 8 KB; 
-	ol1.Size = 2 * lane_len / 8 KB; 
-	wl1.Size = 4 * lane_len*vector_len / 64 KB; 
-	ol2.Size = 28 * vector_len * lane_len / 64 KB; 
-	wl2.Size = 0;//256 KB;
-	ul3.Size = ul3_; //16 64-bit IO 64KB 1-port MBSRAM
-	SchNode::ubuf = ul3.Size;
 
-	double tops = 16*vector_len*lane_len * Cluster::xlen * Cluster::ylen * 2;
-	tops /= 1024;
+	// chess H3: one core type, mapper and technology per chiplet type; upstream's package when no map is given
+	ChipletMap chiplets = chiplet_path.empty() ? ChipletMap::homogeneous(mm, mac_dim, ul3_, T) : ChipletMap::load(chiplet_path, T);
+	SchNode::chiplets = &chiplets;
+	SchNode::frequency = chiplets.frequency_ghz();  // one package clock: the slowest chiplet type's (the base technology's when homogeneous)
+	// NoC::NoP_hop_cost = 2 * 8; //DSE->3.3*8 ; Simba->2*8
+	NoC::NoC_hop_cost = chiplets.noc_hop_cost();
+
+	double tops = chiplets.tops();
 	//NUMBER
 	double core_num = Cluster::xlen * Cluster::ylen;
 	double compute_die_num = NoC::x_cut * NoC::y_cut;
@@ -991,45 +846,17 @@ int main(int argc, char** argv){
 		NoC::NoP_hop_cost = T.nop_hop_cost;
 	}
 	//COST
-	// double cost_silicon_mm_compute = 0.084887 ;
-	// double cost_silicon_mm_IO = 0.056383;
-	// double cost_os = 0.005; //per mm^2
-	// double os_area_scale_factor = 4;// os area will be larger than chip
-	// double ddr_cost = 3.5;//per 16bithttps://www.dramexchange.com/
-	// double os_ocst_factor;//larger os will be more expensive 
-	double post_layout_scale = T.post_layout_scale;
 	double control_unit_prop = T.control_unit_prop;
 	double DFT_prop = T.dft_prop;
 
 	//*********************DIE AREA*********************
-	double sram_area_per_core = (ul3_ + (al1.Size + wl1.Size + ol1.Size)*16) * SRAM_den;
-	double mac_area_per_core = 16*vector_len * lane_len * MAC_den + LR_mac_num*LR_mac_den;
-	double NoC_area_per_core = NoC::NoC_bw * NoC_den;
-	double core_area = (sram_area_per_core + mac_area_per_core + NoC_area_per_core)*post_layout_scale;
-	double core_len = sqrt(core_area);
-	// double NoP_len_per_core = NoC::NoP_bw / 4 * NoP_len;
+	chiplets.compute_areas(T, NoC::NoC_bw, NoP_bw);
 	double PCIe_area = 3000000 * DRAM_bw_each * 4 / 128;
 	double IO_die_area = DRAM_bw_each * 4 * (DDR_PHY_den+DDR_ctrl_den)+ PCIe_area +(compute_die_num==1?0:(NoP_den * NoC::NoP_bw *Cluster::ylen*2));//neglect other IOs
-	double compute_die_area = 0;
-	double core_len_real = core_len;
-	double D2D_area_per_compute_die=0;
-	if (compute_die_num == 1) {
-		D2D_area_per_compute_die = 0;
-	}
-	else if (compute_die_num == 2) {
-		D2D_area_per_compute_die = 2 * NoC::y_step * NoP_den * NoP_bw;
-		// note: NoC::y_step = ylen / ycut
-	}
-	else {
-		D2D_area_per_compute_die = 2 * NoC::x_step * NoP_den * NoP_bw + 2 * NoC::y_step * NoP_den * NoP_bw;
-	}
-	compute_die_area = core_len_real * NoC::x_step * core_len_real * NoC::y_step + D2D_area_per_compute_die;
-	compute_die_area *= (control_unit_prop * DFT_prop);
 	IO_die_area *= (control_unit_prop * DFT_prop);
-	compute_die_area /= 1000000;
 	IO_die_area /= 1000000;
-	double total_die_area = compute_die_area * compute_die_num + IO_die_area;
-	// double os_area = os_area_scale_factor * total_die_area;
+	double compute_die_area = chiplets.compute_die_area_mm2();  // the type's area, or the mean over chiplets of a heterogeneous package
+	double total_die_area = chiplets.total_compute_die_area_mm2() + IO_die_area;
 
 	// Check if areas are too large.
 	if (compute_die_num == 1) {
@@ -1038,119 +865,37 @@ int main(int argc, char** argv){
 			return 1;
 		}
 	}else{
-		if(IO_die_area>T.max_die_area_mm2 || compute_die_area>T.max_die_area_mm2) {
+		if(IO_die_area>T.max_die_area_mm2 || chiplets.max_compute_die_area_mm2()>T.max_die_area_mm2) {
 			cout << "`IO_die_area` or `compute_die_area` too large." << endl;
 			return 1;
 		}
 	}
-	
 	//*********************DIE AREA*********************
-	// if (NoC::x_cut * NoC::y_cut == 1) {
-	// 	os_ocst_factor = 1;
-	// }
-	// else if (os_area <= 30 * 30) {
-	// 	os_ocst_factor = 1.5;
-	// }
-	// else if (os_area <= 55 * 55) {
-	// 	os_ocst_factor = 2;
-	// }
-	// else {
-	// 	os_ocst_factor = 4;
-	// }
 	//*********************COST CALC*********************
 	double cost_overall = 0;
-	double yield_compute_die = 0;
-	double yield_IO_die = 0;
 	double cost_system_package = 0;
-	// double cost_os_overall = 0;
-	double yield_soc = 0;
 	double cost_soc = 0;
 	double cost_chip = 0;
 	double cost_package = 0;
-	double cost_ddr = 0;
-	if (compute_die_num != 1) {
-		// yield_compute_die = pow(yield, compute_die_area / 40000000);
-		// yield_IO_die = pow(yield, IO_die_area / 4 / 40000000);
-		// cost_compute = compute_die_area * compute_die_num / yield_compute_die / 1000000 * cost_silicon_mm_compute/wafer_util(compute_die_area);
-		// cost_IO = IO_die_area / 1000000 * cost_silicon_mm_IO/ wafer_util(IO_die_area/4)/yield_IO_die + DRAM_bw_each * 4 / 44.0 * ddr_cost;
-		std::vector<ChipConfig> configs = {
-        {tech, "Chip", package_type, compute_die_area, compute_die_num},  
-        {tech, "IO", package_type, IO_die_area/4, 4},     
-        //{tech, "HBM", package_type, HBM_area, HBM_num}  
-    	};
+	{
+		// one chip configuration per chiplet type (its node, area and count), the IO dies when the package has several compute dies
+		std::vector<ChipConfig> configs;
+		for (const ChipletType& ct : chiplets.types) {
+			configs.push_back({ct.tech.node, "Chip", package_type, ct.compute_die_area_mm2, ct.num_chiplets});
+		}
+		if (compute_die_num != 1) {
+			configs.push_back({tech, "IO", package_type, IO_die_area/4, 4});
+		}
 		auto [total_cost, total_cost_chip, total_cost_package] = calculate_cost(configs);
 		cost_chip = total_cost_chip;
 		cost_package = total_cost_package;
 		cost_system_package = total_cost;
-		ddr_cost = DRAM_bw_each * 4 * ddr_cost; 
-		cost_overall = cost_system_package + ddr_cost;
-	}
-	else {
-		// yield_soc = pow(yield, total_die_area / 40000000);
-		// cost_soc = total_die_area / yield_soc / 1000000 * cost_silicon_mm_compute/ wafer_util(total_die_area) + DRAM_bw_each * 4 / 44 * ddr_cost;
-		// cost_os_overall = os_area * os_ocst_factor / 1000000 * cost_os;
-		std::vector<ChipConfig> configs = {
-        {tech, "Chip", package_type, compute_die_area, 1},  
-        //{tech, "IO", package_type, IO_die_area/4, 4},     
-        //{tech, "HBM", package_type, HBM_area, HBM_num}  
-    	};
-		auto [total_cost, total_cost_chip, total_cost_package] = calculate_cost(configs);
-		cost_chip = total_cost_chip;
-		cost_package = total_cost_package;
-		cost_system_package = total_cost;
-		cost_soc = cost_system_package;
+		if (compute_die_num == 1) cost_soc = cost_system_package;
 		ddr_cost = DRAM_bw_each * 4 * ddr_cost;
-		cost_overall = cost_soc + ddr_cost;
+		cost_overall = cost_system_package + ddr_cost;
 	}
 	//*********************COST CALC*********************
 
-	
-	
-	al2.Size = 0;
-	al1.RCost = (buffer(vector_len * 8, al1.Size)[0]+0.1*lane_len/8) * 8 * turnover_factor *power_factor;
-	al1.WCost = buffer(vector_len * 8, al1.Size)[1] * 8 * turnover_factor * power_factor;
-	wl1.RCost = buffer(vector_len * 8, wl1.Size)[0] * 8 * turnover_factor * power_factor;
-	wl1.WCost = buffer(vector_len * 8, wl1.Size)[1] * 8 * turnover_factor * power_factor;
-	ol1.RCost = buffer(lane_len * 16, ol1.Size)[0] * 8 * turnover_factor * power_factor;
-	ol1.WCost = buffer(lane_len * 16, ol1.Size)[1] * 8 * turnover_factor * power_factor;
-	ol2.RCost = T.ol2_read * ul3_ / (1024 KB) * turnover_factor;// ol2 is a small part of ul3
-	ol2.WCost = T.ol2_write * ul3_ / (1024 KB) *turnover_factor;
-	ul3.RCost = T.ul3_read * ul3_ /(1024 KB) * turnover_factor;
-	ul3.WCost = T.ul3_write * ul3_ /(1024 KB)* turnover_factor;
-	al2.RCost = al2.WCost = 0 * power_factor;
-	wl2.RCost = wl2.WCost = 0 * power_factor;
-	
-	PolarCore core(s,bus,al1,wl1,ol1,al2,wl2,ol2,ul3,LR_mac_num,LR_mac_cost);
-	PolarMapper mapper(core);
-
-	EyerissCore::Buffer _al1, _wl1, pl1, ul2;
-	EyerissCore::PESetting s2(mac_dim, mac_dim, T.mac_cost);
-	EyerissCore::Bus ibus(T.mac_cost, 64);
-	EyerissCore::Bus wbus(T.mac_cost, 64);
-	EyerissCore::Bus pbus(T.mac_cost, 64); // ifmap RC, weight RCK, psum RK
-
-	_al1.Size = 32;
-	pl1.Size = 1;
-	_wl1.Size = 128;
-	ul2.Size = 1024 KB;
-
-	_al1.RCost = 0.0509 * 8 * turnover_factor *power_factor; //8bit IO single port
-	_al1.WCost = 0.0506 * 8 * turnover_factor*power_factor;//0.045;
-	_wl1.RCost = 0.0545 * 8 * turnover_factor*power_factor; //Using 2 banks of 64
-	_wl1.WCost = 0.054 * 8 * turnover_factor*power_factor;//0.090;
-	pl1.RCost = pl1.WCost = 0.0 * turnover_factor*power_factor;
-	ul2.RCost = 0.1317125 * 8 * turnover_factor*power_factor;
-	ul2.WCost = 0.234025 * 8 * turnover_factor*power_factor;
-
-	EyerissCore core2(s2, ibus, wbus, pbus, _al1, _wl1, pl1, ul2, LR_mac_num, LR_mac_cost);
-	EyerissMapper mapper2(core2);
-
-	CoreMapper* cMapper;
-	if(mm == 0){
-		cMapper = &mapper;
-	}else{
-		cMapper = &mapper2;
-	}
 	// TOPS
 	
 
@@ -1162,8 +907,8 @@ int main(int argc, char** argv){
 	}
 	NoC::interleave = false;
 
-	StdLayerEngine engine(cMapper);
-	FastLayerEngine engine_fast(cMapper);
+	StdLayerEngine engine(&chiplets);
+	FastLayerEngine engine_fast(&chiplets);
 	SchNode::layerMapper = &engine;
 	SchNode::layerMapper_fast = &engine_fast;
 	Light_placement::fast_buffer = &engine_fast;
@@ -1257,7 +1002,7 @@ int main(int argc, char** argv){
 	//SchNode::tot_batch = 64;
 	lid_t num_layer = network->len();
 	SAEngine::nrounds = rr;
-	network->set_utime(*cMapper);
+	network->set_utime(chiplets);
 	
 	Cluster c(0,Cluster::xlen * Cluster::ylen);
 
@@ -1335,7 +1080,7 @@ int main(int argc, char** argv){
 	`stschedule` tool prints input parameters, search time, tree info and cost info.
 	These output info are directly writed to the `stdout`. Redirect `stdout` if needed.
  */	
-	cout << "Mapper " << ((cMapper == &mapper)?"polar":"eyeriss");
+	cout << "Mapper " << (chiplets.type(0).mm == 0 ? "polar" : "eyeriss");
 	cout << " Network " << net_name;
 	cout << " Mesh " << (int)Cluster::xlen << '*' << (int)Cluster::ylen;
 	cout << " Batch " << tot_batch << endl;
@@ -1344,6 +1089,7 @@ int main(int argc, char** argv){
 	cout << "cost_system_package: " << cost_system_package << endl;
 	cout << "cost_overall: " << cost_overall << endl;
 	cout << "cost_soc: " << cost_soc << endl;
+	chiplets.dump(cout);
 
 #if FORMAT_OUTPUT
 	printf("INPUT_PARAMETERS:%s %1d %2d %3d %3d %3d %3d %3d %2d %3d %3d %s %s %3d %s %8d %3d %4d %4d %8d\n", tech.c_str(), mm, nn, xx, yy, ss, bb, rr, ff, xcut, ycut, package_type.c_str(), IO_type.c_str(), _NoP_bw, DDR_type.c_str(), _DRAM_bw, _NoC_bw, _mac_dim, _ul3, total_tops);

@@ -5,6 +5,7 @@
 #include <math.h>
 #include "spatial_mapping/segmentation.h"
 #include "layerengine.h"
+#include "chiplets.h"
 #include "noc.h"
 #include "placement.h"
 #include "util.h"
@@ -31,7 +32,10 @@ std::map<Json::Value,SchNode::jsonindex_t> SchNode::DRAM_ofmap_pos;
 std::map<Json::Value,SchNode::jsonindex_t> SchNode::DRAM_weight_pos;
 std::map<SchNode::tfid_t,SchNode::jsonindex_t> SchNode::DRAM_ifmap_pos;
 bw_t SchNode::DRAM_bw;
-vol_t SchNode::ubuf;
+const ChipletMap* SchNode::chiplets = nullptr;
+vol_t SchNode::ubuf_cap() const{
+	return chiplets->min_ubuf(cluster);
+}
 bool SchNode::cluster_base;
 SchNode::energy_breakdown SchNode::record;
 /*
@@ -460,21 +464,21 @@ void LNode::searchLayer_fast() {
 		return;
 	}*/
 	if (parent->get_type() == NodeType::T) {
-		if (fmap_buf + wgt_buf + ofm_ubuf_vol > ubuf) {
+		if (fmap_buf + wgt_buf + ofm_ubuf_vol > ubuf_cap()) {
 			valid = false;
 			return;
 		}
 	}
 	else if (parent->get_type() == NodeType::S) {
 			//if (num_batch == tot_batch) {
-				if (fmap_buf + wgt_buf + ofm_ubuf_vol > ubuf) {
+				if (fmap_buf + wgt_buf + ofm_ubuf_vol > ubuf_cap()) {
 					valid = false;
 					return;
 				}
 			//}
 				/*
 			else {
-				if (fmap_buf * 2 + wgt_buf + ofm_ubuf_vol > ubuf) {
+				if (fmap_buf * 2 + wgt_buf + ofm_ubuf_vol > ubuf_cap()) {
 					valid = false;
 					return;
 				}
@@ -993,7 +997,7 @@ void TCut::construct_fast(LTreeNode* node) {
 	ubuf_energy = buf_energy = bus_energy = mac_energy = 0;
 	ifm_buf = wgt_buf = fmap_buf = 0;
 	tot_data = core_mul_data = 0;
-	//vol_t min_buffer_tmp = ubuf;
+	//vol_t min_buffer_tmp = ubuf_cap();
 	for (auto child : node->get_children()) {
 		sn_ptr p = newNode(child, cluster,false,Light_placement(),true);
 		tot_data += p->get_data();
@@ -1012,11 +1016,11 @@ void TCut::construct_fast(LTreeNode* node) {
 		
 		if (!is_top) {
 			
-			if(!(p->get_ifm()<= ubuf)){
+			if(!(p->get_ifm()<= ubuf_cap())){
 				valid = false;
 				return;
 			}
-			if (!(is_seg || ((ifm_buf += p->get_ifm())<=ubuf))) {
+			if (!(is_seg || ((ifm_buf += p->get_ifm())<=ubuf_cap()))) {
 				valid = false;
 				return;
 			}
@@ -1036,13 +1040,13 @@ void TCut::construct_fast(LTreeNode* node) {
 						fmap_buf = tmp;
 					}
 				}
-				if (fmap_buf>ubuf) {
+				if (fmap_buf>ubuf_cap()) {
 					valid = false;
 					return;
 				}
 				//buf_usage.max(p->get_buf_usage());
 			}
-			if (!wgt_shift && !((wgt_buf += p->get_wgt())<=ubuf)) {
+			if (!wgt_shift && !((wgt_buf += p->get_wgt())<=ubuf_cap())) {
 				valid = false;
 				return;
 			}
@@ -1078,7 +1082,7 @@ void TCut::construct_fast(LTreeNode* node) {
 			}
 		}
 		else {
-			if (!(is_seg || (ifm_buf*=num_bgrp)<=ubuf)) {
+			if (!(is_seg || (ifm_buf*=num_bgrp)<=ubuf_cap())) {
 				valid = false;
 				return;
 			}
@@ -1095,11 +1099,11 @@ void TCut::construct_fast(LTreeNode* node) {
 				}
 			}
 		}
-		if (fmap_buf>ubuf) {
+		if (fmap_buf>ubuf_cap()) {
 			valid = false;
 			return;
 		}
-		if (!wgt_shift && !((fmap_buf + wgt_buf)<=ubuf)) {
+		if (!wgt_shift && !((fmap_buf + wgt_buf)<=ubuf_cap())) {
 			valid = false;
 			return;
 		}
@@ -1181,7 +1185,7 @@ void SCut::construct_fast(LTreeNode* node){
 			return;
 		}
 		fmap_buf = 0;
-		if(num_bgrp > 1 && !((fmap_buf += (p->get_ifm()+p->get_fmap()))<=ubuf)){
+		if(num_bgrp > 1 && !((fmap_buf += (p->get_ifm()+p->get_fmap()))<=ubuf_cap())){
 			valid = false;
 			return;
 		}

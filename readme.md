@@ -9,6 +9,24 @@ We have iterated on Gemini, expanding it into a larger template. In the latest v
 
 For more details, please refer to the code.  
 
+# The chess fork (`chess/main`)
+
+This branch is upstream master plus what [chess](https://gitlab.com/ssatyendras/projects/technology-driven/chess) needs to drive Gemini from its own models; the input line and the result line stay upstream's.
+
+- **Technology from a file (T3).** The first stdin token may be `@<file>` instead of `7` or `12`: the file holds every technology number `main.cpp` used to choose by branch (`include/technology.h`, `src/technology.cpp`; `stschedule --dump-technology <tech> <package> <IO> <DDR>` prints the built-in set in the file's form). The node key for `cost.cpp` is the file's `node` line.
+- **Heterogeneous packages (H3).** An optional 21st token `@<chiplet map>` gives every chiplet of the `xcut x ycut` grid a chiplet type: core micro-architecture, MAC count, L2 size and its own technology file (`include/chiplets.h`, `src/chiplets.cpp`). Each type owns a core and a mapper; a layer spread over several types takes the slowest type's time and the sum of its cores' energies; die area and cost are summed per type; the package runs at the slowest type's clock and its NoC hop energy is the core-count-weighted mean. Without the token the package is upstream's and every number is identical. The map:
+
+  ```
+  types 2
+  type 0 mm 0 mac 512 ul3_kb 1024 tech technology.tech
+  type 1 mm 0 mac 1024 ul3_kb 512 tech technology.7nm.tech
+  map 0 1      # one line per chiplet row (y), xcut entries
+  map 1 0
+  ```
+
+  The run prints `CHIPLETS:` and one `CHIPLET_TYPE i:` line per type (node, clock, mm, MACs, L2, chiplet and core counts, core and die areas).
+- **Fixed seed.** `GEMINI_SEED=<n>` seeds the search instead of the clock.
+
 # How to Run the Project  
 
 First, clone the entire project from GitHub:  

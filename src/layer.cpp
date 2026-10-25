@@ -28,6 +28,14 @@ void Layer::set_utime(utime_t time){
 	unit_time = time;
 }
 
+utime_t Layer::get_utime(int chiplet_type) const{
+	return unit_time_types.empty() ? unit_time : unit_time_types.at(chiplet_type);
+}
+
+void Layer::set_utime_types(const std::vector<utime_t>& times){
+	unit_time_types = times;
+}
+
 const fmap_shape& Layer::tot_ifmap_shape() const{
 	return ifm_shape;
 }

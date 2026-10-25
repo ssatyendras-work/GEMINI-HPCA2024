@@ -44,7 +44,8 @@ public:
 	typedef std::uint32_t tfid_t;
 	typedef std::uint32_t jsonindex_t;
 	static bw_t DRAM_bw;
-	static vol_t ubuf;
+	static const class ChipletMap* chiplets;  // H3: the package's chiplet types
+	vol_t ubuf_cap() const;  // the L2 every core of this node's cluster can hold (the smallest among its chiplet types)
 	static bool serdes;
 	static int serdes_lane_total;
 	static int serdes_power;//Unit is Watt

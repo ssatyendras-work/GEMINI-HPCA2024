@@ -5,6 +5,7 @@
 #include "spatial_mapping/light_placement.h"
 
 class CoreMapper;
+class ChipletMap;
 //#include "coremapping.h"
 
 struct LayerScheme{
@@ -32,9 +33,9 @@ public:
 };
 
 class StdLayerEngine : public LayerEngine{
-	CoreMapper* mapper;
+	const ChipletMap* chiplets;  // H3: the package's chiplet types (their cores and mappers)
 public:
-	StdLayerEngine(CoreMapper* _mapper);
+	StdLayerEngine(const ChipletMap* _chiplets);
 	virtual vol_t get_ubuf_size() const override;
 	virtual LayerScheme search(LNode* curNode, bool calc_noc = true) const override;
 	void initLayouts(PlaceSch& place, const Node& layerT, const fmap_shape& ofmShape, len_t B) const;
@@ -45,9 +46,9 @@ public:
 };
 
 class FastLayerEngine : public LayerEngine {
-	CoreMapper* mapper;
+	const ChipletMap* chiplets;  // H3: the package's chiplet types (their cores and mappers)
 public:
-	FastLayerEngine(CoreMapper* _mapper);
+	FastLayerEngine(const ChipletMap* _chiplets);
 	virtual vol_t get_ubuf_size() const override;
 	virtual LayerScheme search(LNode* curNode, bool calc_noc = true) const override;
 	void initLayouts(PlaceSch& place, const Node& layerT, const fmap_shape& ofmShape, len_t B) const;

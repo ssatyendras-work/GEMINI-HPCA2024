@@ -1,4 +1,5 @@
 #include "layerengine.h"
+#include "chiplets.h"
 
 #include <cassert>
 #include <cstring>
@@ -7,16 +8,16 @@
 #include "placement.h"
 
 
-StdLayerEngine::StdLayerEngine(CoreMapper* _mapper):mapper(_mapper){}
+StdLayerEngine::StdLayerEngine(const ChipletMap* _chiplets):chiplets(_chiplets){}
 
-FastLayerEngine::FastLayerEngine(CoreMapper* _mapper) :mapper(_mapper) {}
+FastLayerEngine::FastLayerEngine(const ChipletMap* _chiplets) :chiplets(_chiplets) {}
 
 vol_t StdLayerEngine::get_ubuf_size() const{
-	return mapper->get_ubuf_size();
+	return chiplets->min_core_ubuf();
 }
 
 vol_t FastLayerEngine::get_ubuf_size() const {
-	return mapper->get_ubuf_size();
+	return chiplets->min_core_ubuf();
 }
 
 LayerScheme FastLayerEngine::fillin(LNode* curNode, const Light_placement &place,bool calc_noc,bool base){
@@ -38,7 +39,8 @@ LayerScheme StdLayerEngine::fillin(LNode* curNode, const Light_placement &place,
 	len_t W = ofmShape.w;
 	*/
 	cidx_t numCores = cluster.num_cores();
-	const Core::Buffer& ubuf = mapper->core().ubuf();
+	const ChipletMap::ClusterView view = chiplets->view(cluster);  // H3: the cluster's chiplet types
+	const Core::Buffer& ubuf = view.ubuf;
 	vol_t totUbufSize = ubuf.Size * numCores;
 	layerSch.noc.calc_bw = NoC::calc_noc_control;
 	layerSch.noc.is_base = NoC::interleave;
@@ -95,7 +97,7 @@ LayerScheme StdLayerEngine::fillin(LNode* curNode, const Light_placement &place,
 		estimatedBuf += placeSch.wgtLayout->maxRange();
 		
 		// Search for intra-tile dataflow
-		tileSch = mapper->genLayerMap(layer, partSch, placeSch.fetch, B, wgt_B);
+		tileSch = view.genLayerMap(layer, partSch, placeSch.fetch, B, wgt_B);
 		if(!tileSch.cost.is_valid()){
 			curNode->valid=false;
 			return layerSch;
@@ -179,7 +181,8 @@ LayerScheme StdLayerEngine::search(LNode* curNode,bool calc_noc) const{
 	len_t W = ofmShape.w;
 	*/
 	cidx_t numCores = cluster.num_cores();
-	const Core::Buffer& ubuf = mapper->core().ubuf();
+	const ChipletMap::ClusterView view = chiplets->view(cluster);  // H3: the cluster's chiplet types
+	const Core::Buffer& ubuf = view.ubuf;
 	vol_t totUbufSize = ubuf.Size * numCores;
 
 	// Current scheme
@@ -256,7 +259,7 @@ LayerScheme StdLayerEngine::search(LNode* curNode,bool calc_noc) const{
 		}
 		
 		// Search for intra-tile dataflow
-		tileSch = mapper->genLayerMap(layer, partSch, placeSch.fetch, B, wgt_B);
+		tileSch = view.genLayerMap(layer, partSch, placeSch.fetch, B, wgt_B);
 		if(!tileSch.cost.is_valid()) continue;
 		curCost.energy = tileSch.cost.energy * numCores;
 		curCost.time = tileSch.cost.time;
@@ -334,7 +337,8 @@ LayerScheme FastLayerEngine::search(LNode* curNode,bool calc_noc) const {
 	len_t W = ofmShape.w;
 	*/
 	cidx_t numCores = cluster.num_cores();
-	const Core::Buffer& ubuf = mapper->core().ubuf();
+	const ChipletMap::ClusterView view = chiplets->view(cluster);  // H3: the cluster's chiplet types
+	const Core::Buffer& ubuf = view.ubuf;
 	vol_t totUbufSize = ubuf.Size * numCores;
 	if (wgt_B) {
 		// Fetch each prev layer from its ofmap/mem layout
@@ -515,7 +519,8 @@ PartSch FastLayerEngine::fast_get_part(Cluster c, const Node& _layerT, len_t num
 	len_t B = num_batch;
 
 	cidx_t numCores = cluster.num_cores();
-	const Core::Buffer& ubuf = mapper->core().ubuf();
+	const ChipletMap::ClusterView view = chiplets->view(cluster);  // H3: the cluster's chiplet types
+	const Core::Buffer& ubuf = view.ubuf;
 	vol_t totUbufSize = ubuf.Size * numCores;
 
 	layerSch.totCost.time = layerT.layer().get_utime() * B;
