@@ -284,6 +284,12 @@ SchNode* SchNode::search_all(lid_t from, lid_t to, len_t bgrp){
 */
 
 bool LNode::search(bool usefillin, const Light_placement &place){
+	if (usefillin) {
+		const auto& d = place.layer_DRAM.at(layerid);
+		dram_ids[0] = d[0]; dram_ids[1] = d[1]; dram_ids[2] = d[2];
+	} else {
+		dram_ids[0] = dram_ids[1] = dram_ids[2] = nearest_dram_id;
+	}
 	auto res = usefillin? layerMapper->fillin(this, place,calc_noc,is_base) : layerMapper->search(this, calc_noc);
 	if(!res.isValid()) return false;
 	noc = std::move(res.noc);
@@ -556,6 +562,8 @@ void LNode::print_struct(std::string pad, std::ostream& os) const{
 	
 	os << " NoCtime = " << noc.get_time()/frequency << " NocBW = " << NoC::NoC_bw << " Computing_time = " << tileSch.cost.time;
 	os << "DDR_access 0 1 2 3 =" << noc.get_DRAM_acc(0) << "," << noc.get_DRAM_acc(1) << "," << noc.get_DRAM_acc(2) << "," << noc.get_DRAM_acc(3) << ",";
+	// chess (E7): the DRAM of the inputs, weights and outputs (-2: interleaved over all DRAMs, -1: none)
+	os << " dram=" << dram_ids[0] << ',' << dram_ids[1] << ',' << dram_ids[2];
 	// chess (E6): the cores this layer runs on, as grid positions x.y
 	os << " cores=";
 	for (cidx_t i = 0; i < cluster.num_cores(); ++i) {

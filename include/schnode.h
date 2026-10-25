@@ -173,6 +173,8 @@ private:
 	bool search(bool usefillin = false, const Light_placement &place = Light_placement());
 	bool search_fast();
 public:
+	int dram_ids[3] = {-1, -1, -1};  // chess (E7): DRAM of the inputs, weights and outputs this layer used (-2: interleaved over all)
+public:
 	//LNode(lid_t _layerid, const Cluster& _c, cut_ptr _parent, len_t nbatch);
 	LNode(LTreeNode* _node, const Cluster& _c, cut_ptr _parent, const Light_placement& place, bool fast_mode=false,bool base=false, bool calc_noc = true);
 	LNode(LTreeNode* _node, const Cluster& _c, cut_ptr _parent,bool fast_mode=false,bool base = false, bool calc_noc = true);
