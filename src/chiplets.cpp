@@ -238,8 +238,10 @@ ChipletMap ChipletMap::homogeneous(int mm, std::uint16_t mac_dim, vol_t ul3, con
 	t.mac_dim = mac_dim;
 	t.ul3 = ul3;
 	t.tech = T;
+	t.clock_ghz = T.frequency_ghz;
 	t.num_chiplets = m.num_chiplets();
 	t.build();
+	m.clock_ref = T.frequency_ghz;
 	m.grid.assign(static_cast<size_t>(m.x_cut) * m.y_cut, 0);
 	return m;
 }
@@ -275,9 +277,12 @@ ChipletMap ChipletMap::load(const std::string& path, const Technology& base) {
 				else if (k == "mac") { t.mac_dim = static_cast<std::uint16_t>(std::stoi(v)); has_mac = true; }
 				else if (k == "ul3_kb") { t.ul3 = static_cast<vol_t>(std::stoull(v)) KB; has_ul3 = true; }
 				else if (k == "tech") { t.tech = Technology::load(v); }
+				else if (k == "clock_ghz") { t.clock_ghz = std::stod(v); if (t.clock_ghz <= 0) throw std::runtime_error("chiplet map " + path + ": clock_ghz must be positive"); }
 				else throw std::runtime_error("chiplet map " + path + ": unknown key " + k);
 			}
 			if (!has_mm || !has_mac || !has_ul3) throw std::runtime_error("chiplet map " + path + ": type " + std::to_string(idx) + " needs mm, mac and ul3_kb");
+		} else if (key == "clock_ghz") {
+			if (!(s >> m.clock_ref) || m.clock_ref <= 0) throw std::runtime_error("chiplet map " + path + ": bad clock_ghz line");
 		} else if (key == "map") {
 			std::vector<int> row;
 			int v;
@@ -299,8 +304,9 @@ ChipletMap ChipletMap::load(const std::string& path, const Technology& base) {
 			m.types[v].num_chiplets++;
 		}
 	}
+	if (m.clock_ref <= 0) m.clock_ref = base.frequency_ghz;
 	for (ChipletType& t : m.types) {
-		// a type's own clock is not used: the package runs at the base technology's clock (SchNode::frequency)
+		if (t.clock_ghz <= 0) t.clock_ghz = t.tech.frequency_ghz;
 		t.build();
 	}
 	return m;
@@ -342,7 +348,7 @@ ChipletMap::ClusterView ChipletMap::view(const Cluster& c) const {
 	if (m.single()) {
 		const ChipletType& t = types[m.counts[0].first];
 		v.ubuf = t.core->ubuf();
-		v.mappers.emplace_back(t.mapper.get(), m.total);
+		v.mappers.push_back({t.mapper.get(), m.total, ratio(m.counts[0].first)});
 		return v;
 	}
 	// The L2 every core can hold is the smallest; its access energies are the cores' mean.
@@ -354,7 +360,7 @@ ChipletMap::ClusterView ChipletMap::view(const Cluster& c) const {
 		if (!smallest || b.Size < smallest->Size) smallest = &b;
 		rcost += b.RCost * n;
 		wcost += b.WCost * n;
-		v.mappers.emplace_back(t.mapper.get(), n);
+		v.mappers.push_back({t.mapper.get(), n, ratio(idx)});
 	}
 	v.ubuf = *smallest;
 	v.ubuf.RCost = rcost / m.total;
@@ -364,19 +370,23 @@ ChipletMap::ClusterView ChipletMap::view(const Cluster& c) const {
 
 CoreMapper::CoreMapping ChipletMap::ClusterView::genLayerMap(const Layer& layer, const PartSch& part, const FetchSch& fetch, len_t batch_size, bool wgtB) const {
 	if (mappers.size() == 1) {
-		return const_cast<CoreMapper*>(mappers[0].first)->genLayerMap(layer, part, fetch, batch_size, wgtB);
+		CoreMapper::CoreMapping m = const_cast<CoreMapper*>(mappers[0].mapper)->genLayerMap(layer, part, fetch, batch_size, wgtB);
+		if (mappers[0].ratio != 1.0 && m.cost.is_valid()) m.cost.time = static_cast<cycle_t>(std::ceil(m.cost.time * mappers[0].ratio));
+		return m;
 	}
-	// Every core type maps the same tile; the layer takes the slowest core's time and the sum of the cores' energies
-	// (kept per core here: the engines multiply by the core count).
+	// Every core type maps the same tile; the layer takes the slowest core's time (in reference cycles: each type's
+	// cycles at its own clock) and the sum of the cores' energies (kept per core here: the engines multiply by the core count).
 	CoreMapper::CoreMapping acc;
 	acc.cost = CoreMapper::MapCost(0, 0);
 	acc.ubuf = acc.buffer = acc.noc = acc.mac = 0;
 	acc.util = acc.tot_util = 0;
-	for (const auto& [mapper, n] : mappers) {
-		CoreMapper::CoreMapping m = const_cast<CoreMapper*>(mapper)->genLayerMap(layer, part, fetch, batch_size, wgtB);
+	for (const Part& pt : mappers) {
+		const cidx_t n = pt.count;
+		CoreMapper::CoreMapping m = const_cast<CoreMapper*>(pt.mapper)->genLayerMap(layer, part, fetch, batch_size, wgtB);
 		if (!m.cost.is_valid()) return m;
 		acc.cost.energy += m.cost.energy * n;
-		acc.cost.time = std::max(acc.cost.time, m.cost.time);
+		cycle_t t_ref = pt.ratio == 1.0 ? m.cost.time : static_cast<cycle_t>(std::ceil(m.cost.time * pt.ratio));
+		acc.cost.time = std::max(acc.cost.time, t_ref);
 		acc.ubuf += m.ubuf * n;
 		acc.buffer += m.buffer * n;
 		acc.noc += m.noc * n;
@@ -418,10 +428,14 @@ vol_t ChipletMap::min_core_ubuf() const {
 	return v;
 }
 
-double ChipletMap::frequency_ghz() const {
-	double f = types[0].tech.frequency_ghz;
-	for (const ChipletType& t : types) f = std::min(f, t.tech.frequency_ghz);
-	return f;
+bool ChipletMap::uniform_clock() const {
+	for (const ChipletType& t : types) if (t.clock_ghz != clock_ref) return false;
+	return true;
+}
+
+cycle_t ChipletMap::to_ref(cycle_t cycles, int type) const {
+	double r = ratio(type);
+	return r == 1.0 ? cycles : static_cast<cycle_t>(std::ceil(cycles * r));
 }
 
 energy_t ChipletMap::noc_hop_cost() const {
@@ -509,11 +523,11 @@ double ChipletMap::max_compute_die_area_mm2() const {
 }
 
 void ChipletMap::dump(std::ostream& os) const {
-	os << "CHIPLETS: types=" << types.size() << " grid=" << (int)x_cut << "x" << (int)y_cut << " clock_ghz=" << frequency_ghz() << " map=";
+	os << "CHIPLETS: types=" << types.size() << " grid=" << (int)x_cut << "x" << (int)y_cut << " clock_ghz=" << clock_ref << " uniform_clock=" << (uniform_clock() ? 1 : 0) << " map=";
 	for (size_t i = 0; i < grid.size(); ++i) os << (i ? "," : "") << grid[i];
 	os << std::endl;
 	for (const ChipletType& t : types) {
-		os << "CHIPLET_TYPE " << t.idx << ": node=" << t.tech.node << " frequency_ghz=" << t.tech.frequency_ghz << " mm=" << t.mm << " mac=" << t.mac_dim << " ul3_kb=" << (t.ul3 / 1024)
+		os << "CHIPLET_TYPE " << t.idx << ": node=" << t.tech.node << " clock_ghz=" << t.clock_ghz << " nominal_ghz=" << t.tech.frequency_ghz << " mm=" << t.mm << " mac=" << t.mac_dim << " ul3_kb=" << (t.ul3 / 1024)
 		   << " count=" << t.num_chiplets << " cores=" << t.num_chiplets * cores_per_chiplet() << " core_area_um2=" << t.core_area_um2
 		   << " compute_die_area_mm2=" << t.compute_die_area_mm2 << std::endl;
 	}

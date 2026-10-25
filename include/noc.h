@@ -13,6 +13,7 @@ class UniqueLayout;
 struct PlaceSch;
 class LNode;
 class BufferUsage;
+class ChipletMap;
 //#include "datalayout.h"
 //#include "placement.h"
 //#include "schnode.h"
@@ -34,6 +35,7 @@ public:
 	static std::vector<pos_t> dram_list_base;
 	//static 
 	static std::unordered_set<noc_t>NoP_links;
+	static const ChipletMap* chiplets;  // H8: per-chiplet clocks for the NoC links inside a chiplet
 	bool calc_bw;
 	bool is_base;
 private:

@@ -807,7 +807,8 @@ int main(int argc, char** argv){
 	// chess H3: one core type, mapper and technology per chiplet type; upstream's package when no map is given
 	ChipletMap chiplets = chiplet_path.empty() ? ChipletMap::homogeneous(mm, mac_dim, ul3_, T) : ChipletMap::load(chiplet_path, T);
 	SchNode::chiplets = &chiplets;
-	SchNode::frequency = chiplets.frequency_ghz();  // one package clock: the slowest chiplet type's (the base technology's when homogeneous)
+	NoC::chiplets = &chiplets;
+	SchNode::frequency = chiplets.frequency_ghz();  // the reference clock: the interconnect's, and the unit of the result's time (the base technology's by default)
 	// NoC::NoP_hop_cost = 2 * 8; //DSE->3.3*8 ; Simba->2*8
 	NoC::NoC_hop_cost = chiplets.noc_hop_cost();
 

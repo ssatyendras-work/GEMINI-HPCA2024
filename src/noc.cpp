@@ -1,4 +1,5 @@
 #include "noc.h"
+#include "chiplets.h"
 
 #include <algorithm>
 #include <cassert>
@@ -27,6 +28,7 @@ mlen_t NoC::y_step;
 std::vector<std::vector<pos_t>> NoC::dram_list;
 std::vector<pos_t> NoC::dram_list_base;
 std::unordered_set<noc_t> NoC::NoP_links;
+const ChipletMap* NoC::chiplets = nullptr;
 
 
 
@@ -663,6 +665,27 @@ NoC::hop_t NoC::HopCount::max() const{
 }
 
 cycle_t NoC::HopCount::get_nocp_time() const {
+	if (chiplets && !chiplets->uniform_clock()) {
+		// H8: a NoC link inside a chiplet runs at that chiplet's clock; NoP links and the DRAM side at the reference clock.
+		cycle_t t = 0;
+		for (const auto& it : link_hops) {
+			cycle_t c;
+			if (NoP_links.count(it.first)) {
+				c = DIVCEIL(it.second * factor, NoP_bw);
+			} else {
+				c = DIVCEIL(it.second * factor, NoC_bw);
+				noc_t idx = it.first;
+				if (idx >= 0) {
+					idx /= 4;
+					mlen_t y = idx % Cluster::ylen;
+					mlen_t x = idx / Cluster::ylen;
+					if (x < Cluster::xlen) c = chiplets->to_ref(c, chiplets->type_of_pos({x, y}));
+				}
+			}
+			t = MAX(t, c);
+		}
+		return t;
+	}
 	hop_t NoC = 0;
 	hop_t NoP = 0;
 	for (const auto& it : link_hops) {

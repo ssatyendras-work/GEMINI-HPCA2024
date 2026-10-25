@@ -255,6 +255,7 @@ void Network::set_utime(const ChipletMap& chiplets) const{
 		Layer& l = const_cast<Layer&>(n.layer());
 		if(chiplets.single()){
 			chiplets.type(0).mapper->set_utime(l);
+			if(chiplets.ratio(0) != 1.0) l.set_utime(l.get_utime() * chiplets.ratio(0));  // the type's cycles at the reference clock
 			continue;
 		}
 		// every type's own unit time; the package value is the cores' harmonic mean (the layer spread over the package)
@@ -262,6 +263,7 @@ void Network::set_utime(const ChipletMap& chiplets) const{
 		double inv = 0, cores = 0;
 		for(const ChipletType& t: chiplets.types){
 			t.mapper->set_utime(l);
+			if(chiplets.ratio(t.idx) != 1.0) l.set_utime(l.get_utime() * chiplets.ratio(t.idx));
 			times.push_back(l.get_utime());
 			double nc = static_cast<double>(t.num_chiplets) * chiplets.cores_per_chiplet();
 			if(nc > 0 && l.get_utime() > 0) inv += nc / l.get_utime();
