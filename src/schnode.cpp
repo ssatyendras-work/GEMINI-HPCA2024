@@ -287,6 +287,10 @@ bool LNode::search(bool usefillin, const Light_placement &place){
 	if (usefillin) {
 		const auto& d = place.layer_DRAM.at(layerid);
 		dram_ids[0] = d[0]; dram_ids[1] = d[1]; dram_ids[2] = d[2];
+		partnos.clear();
+		for (const auto& core : place.get_placement()) {
+			if (core.layerno == layerid) partnos.push_back(core.partno);
+		}
 	} else {
 		dram_ids[0] = dram_ids[1] = dram_ids[2] = nearest_dram_id;
 	}
@@ -569,6 +573,7 @@ void LNode::print_struct(std::string pad, std::ostream& os) const{
 	for (cidx_t i = 0; i < cluster.num_cores(); ++i) {
 		pos_t q = cluster[i];
 		os << (i ? "," : "") << (int)q.x << '.' << (int)q.y;
+		if (i < (cidx_t)partnos.size()) os << ':' << partnos[i];  // the output partition number this core holds
 	}
 	os << std::endl;
 	if(parent == nullptr || parent->is_DRAM_cut()){
