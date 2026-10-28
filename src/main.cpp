@@ -748,8 +748,16 @@ int main(int argc, char** argv){
 
 	// Get input parameters.
 	int mm, nn, xx, yy, ss, bb, rr, ff, xcut, ycut, _NoP_bw, _DRAM_bw, _NoC_bw, _mac_dim, _ul3, total_tops;
-	string tech, package_type, IO_type, DDR_type;
-	cin >> tech >> mm >> nn >> xx >> yy >> ss >> bb >> rr >> ff >> xcut >> ycut >> package_type >> IO_type >> _NoP_bw >> DDR_type >> _DRAM_bw >> _NoC_bw >> _mac_dim >> _ul3 >> total_tops;
+	string tech, package_type, IO_type, DDR_type, net_tok;
+	cin >> tech >> mm >> net_tok >> xx >> yy >> ss >> bb >> rr >> ff >> xcut >> ycut >> package_type >> IO_type >> _NoP_bw >> DDR_type >> _DRAM_bw >> _NoC_bw >> _mac_dim >> _ul3 >> total_tops;
+	// chess/main (E8): the network token is a built-in network's number, or `@<file>` for a network read from a file (src/nns/network_file.cpp; nn is then -1)
+	string net_file;
+	if (net_tok.rfind("@", 0) == 0) {
+		net_file = net_tok.substr(1);
+		nn = -1;
+	} else {
+		nn = stoi(net_tok);
+	}
 	// chess H3: an optional 21st token `@<chiplet map>` gives every chiplet its core type and technology (see include/chiplets.h)
 	string chiplet_path;
 	{
@@ -915,7 +923,10 @@ int main(int argc, char** argv){
 	Light_placement::fast_buffer = &engine_fast;
 
 	std::string net_name;
-	switch (nn) {
+	if (!net_file.empty()) {
+		static Network file_network = load_network(net_file, net_name);
+		network = &file_network;
+	} else switch (nn) {
 	case 0:
 		network = &darknet19;
 		net_name="darknet19";

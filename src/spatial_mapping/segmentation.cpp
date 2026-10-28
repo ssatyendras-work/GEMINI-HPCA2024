@@ -1012,7 +1012,7 @@ Segment_scheme* DP_search(int iter_num, bool base,bool fast_mode) {
         // If a segment with only one layer is invalid, there would be no feasible segment.
         // assert(dp_batch[i] != 0);
         if (dp_batch[i] == 0) {
-            std::cout << "dp_batch[i] is zero." << std::endl;
+            std::cout << "dp_batch[i] is zero. layer " << i << " " << network->getNode(i).name() << std::endl;  // chess/main (E8): which layer fits at no batch
             return nullptr;
         }
         // Copy border (`border` has been modified according to the segment scheme in `search_best_batch`).

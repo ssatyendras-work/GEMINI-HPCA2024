@@ -37,4 +37,6 @@ extern const Network GPT2_prefill_block;
 // extern const Network GPT2_decode;
 extern const Network GPT2_decode_block;
 Network gen_network(std::string model_name);
+// chess/main (E8): a network read from a text file (src/nns/network_file.cpp); its name is returned through name.
+Network load_network(const std::string& path, std::string& name);
 #endif // NNS_H
