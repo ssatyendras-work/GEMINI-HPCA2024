@@ -198,21 +198,25 @@ void ChipletType::build() {
 		core = std::move(c);
 	} else {
 		EyerissCore::Buffer _al1, _wl1, pl1, ul2;
-		EyerissCore::PESetting s2(mac_dim, mac_dim, T.mac_cost);
+		// chess/main: an array of 4·vector_len x 4·lane_len PEs, as many PEs as the type's MACs (macs_per_core) at one MAC per PE; upstream builds
+		// mac_dim x mac_dim (512 x 512 PEs for 512 MACs). The shapes are the power-of-two arrays closest to square: square where the count allows, as
+		// Eyeriss v2's authors scaled Eyeriss v1 (16x16, 32x32, 128x128 PEs; Chen et al., JETCAS 2019, Sec. IV), 1:2 otherwise (16x32, 32x64,
+		// 64x128); every side holds Eyeriss v1's 12 filter rows natively (12x14 PEs; Chen et al., JSSC 2017). ChiSER's branch builds the same.
+		EyerissCore::PESetting s2(4 * vector_len, 4 * lane_len, T.mac_cost);
 		EyerissCore::Bus ibus(T.mac_cost, 64);
 		EyerissCore::Bus wbus(T.mac_cost, 64);
 		EyerissCore::Bus pbus(T.mac_cost, 64); // ifmap RC, weight RCK, psum RK
 		_al1.Size = 32;
 		pl1.Size = 1;
 		_wl1.Size = 128;
-		ul2.Size = 1024 KB;
+		ul2.Size = ul3_;  // chess/main: the type's L2 (upstream: 1024 KB whatever the type says); its energies scale with the size, as the Polar core's ul3
 		_al1.RCost = 0.0509 * 8 * turnover_factor *power_factor; //8bit IO single port
 		_al1.WCost = 0.0506 * 8 * turnover_factor*power_factor;//0.045;
 		_wl1.RCost = 0.0545 * 8 * turnover_factor*power_factor; //Using 2 banks of 64
 		_wl1.WCost = 0.054 * 8 * turnover_factor*power_factor;//0.090;
 		pl1.RCost = pl1.WCost = 0.0 * turnover_factor*power_factor;
-		ul2.RCost = 0.1317125 * 8 * turnover_factor*power_factor;
-		ul2.WCost = 0.234025 * 8 * turnover_factor*power_factor;
+		ul2.RCost = 0.1317125 * 8 * ul3_ / (1024 KB) * turnover_factor*power_factor;
+		ul2.WCost = 0.234025 * 8 * ul3_ / (1024 KB) * turnover_factor*power_factor;
 		auto c = std::make_unique<EyerissCore>(s2, ibus, wbus, pbus, _al1, _wl1, pl1, ul2, LR_mac_num, LR_mac_cost);
 		mapper = std::make_unique<EyerissMapper>(*c);
 		core = std::move(c);
