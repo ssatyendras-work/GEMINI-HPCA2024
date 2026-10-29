@@ -49,3 +49,20 @@ EyerissCore::PESetting::PESetting(vmac_t _Xarray, vmac_t _Yarray, energy_t _MacC
 
 EyerissCore::Bus::Bus(energy_t _BusCost, bw_t _BusBW) :
 	BusCost(_BusCost), BusBW(_BusBW) {}
+
+// chess H4
+
+SystolicCore::SystolicCore(std::uint16_t _rows, std::uint16_t _cols, energy_t _MacCost, const Buffer& _ub, const Buffer& _fifo, const Buffer& _acc,
+                           const Buffer& _reg, numMac_t _LR_mac_num, energy_t _LR_mac_cost):
+	Core(static_cast<numMac_t>(_rows * _cols), _LR_mac_num, _LR_mac_cost), rows(_rows), cols(_cols), MacCost(_MacCost), ub(_ub), fifo(_fifo), acc(_acc), reg(_reg){}
+
+const Core::Buffer& SystolicCore::ubuf() const{
+	return ub;
+}
+
+VectorCore::VectorCore(numMac_t _lanes, const Buffer& _ub, energy_t _LR_mac_cost):
+	Core(_lanes, _lanes, _LR_mac_cost), ub(_ub){}
+
+const Core::Buffer& VectorCore::ubuf() const{
+	return ub;
+}

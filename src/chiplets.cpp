@@ -217,8 +217,43 @@ void ChipletType::build() {
 		pl1.RCost = pl1.WCost = 0.0 * turnover_factor*power_factor;
 		ul2.RCost = 0.1317125 * 8 * ul3_ / (1024 KB) * turnover_factor*power_factor;
 		ul2.WCost = 0.234025 * 8 * ul3_ / (1024 KB) * turnover_factor*power_factor;
-		auto c = std::make_unique<EyerissCore>(s2, ibus, wbus, pbus, _al1, _wl1, pl1, ul2, LR_mac_num, LR_mac_cost);
-		mapper = std::make_unique<EyerissMapper>(*c);
+		if (mm == 1) {
+			auto c = std::make_unique<EyerissCore>(s2, ibus, wbus, pbus, _al1, _wl1, pl1, ul2, LR_mac_num, LR_mac_cost);
+			mapper = std::make_unique<EyerissMapper>(*c);
+			core = std::move(c);
+			return;
+		}
+		// chess H4: the systolic array and the vector engine. Their energies are the values Gemini has: the unified buffer (and the vector
+		// engine's L2) as the Polar core's ul3, the accumulators (64 B per MAC, TPU v1's ratio) as its output L2 scaled by their size, the PE
+		// registers as the Eyeriss core's activation scratchpad, the weight FIFO (four tiles) from the SRAM table. chess's port builds the same
+		// (chess.system.core.cores.build_core).
+		Core::Buffer ub;
+		ub.Size = ul3_;
+		ub.RCost = T.ul3_read * ul3_ / (1024 KB) * turnover_factor;
+		ub.WCost = T.ul3_write * ul3_ / (1024 KB) * turnover_factor;
+		if (mm == 3) {
+			LR_mac_num = mac_dim;  // the vector engine's lanes are its MAC count
+			auto c = std::make_unique<VectorCore>(mac_dim, ub, LR_mac_cost);
+			mapper = std::make_unique<VectorMapper>(*c);
+			core = std::move(c);
+			return;
+		}
+		if (mm != 2) throw std::runtime_error("unknown core type mm=" + std::to_string(mm) + " (0 Polar, 1 Eyeriss, 2 systolic, 3 vector)");
+		std::uint16_t rows = 4 * vector_len, cols = 4 * lane_len;
+		Core::Buffer fifo, acc, reg;
+		fifo.Size = 4 * static_cast<vol_t>(rows) * cols;
+		fifo.RCost = buffer(64, fifo.Size)[0] * 8 * turnover_factor * power_factor;
+		fifo.WCost = buffer(64, fifo.Size)[1] * 8 * turnover_factor * power_factor;
+		vol_t acc_bytes = 64 * static_cast<vol_t>(rows) * cols;
+		acc.Size = acc_bytes;
+		acc.RCost = T.ol2_read * acc_bytes / (1024 KB) * turnover_factor;
+		acc.WCost = T.ol2_write * acc_bytes / (1024 KB) * turnover_factor;
+		reg.Size = 1;
+		reg.RCost = _al1.RCost;
+		reg.WCost = _al1.WCost;
+		LR_mac_num = cols;  // the accumulators' activation pipeline: one lane per column
+		auto c = std::make_unique<SystolicCore>(rows, cols, T.mac_cost, ub, fifo, acc, reg, LR_mac_num, LR_mac_cost);
+		mapper = std::make_unique<SystolicMapper>(*c);
 		core = std::move(c);
 	}
 }
@@ -485,7 +520,8 @@ void ChipletMap::compute_areas(const Technology& base, bw_t NoC_bw, bw_t NoP_bw)
 		vol_t ol1 = 2 * t.lane_len / 8 KB;
 		vol_t wl1 = 4 * t.lane_len*t.vector_len / 64 KB;
 		double sram_area_per_core = (t.ul3 + (al1 + wl1 + ol1)*16) * SRAM_den;
-		double mac_area_per_core = 16*t.vector_len * t.lane_len * MAC_den + t.LR_mac_num*LR_mac_den;
+		// chess H4: a vector engine has no MAC array, only its lanes; the other types keep upstream's formula
+		double mac_area_per_core = (t.mm == 3 ? 0.0 : 16*t.vector_len * t.lane_len * MAC_den) + t.LR_mac_num*LR_mac_den;
 		double NoC_area_per_core = NoC_bw * NoC_den;
 		double core_area = (sram_area_per_core + mac_area_per_core + NoC_area_per_core)*post_layout_scale;
 		double core_len = sqrt(core_area);

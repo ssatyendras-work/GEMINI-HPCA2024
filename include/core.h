@@ -75,4 +75,22 @@ public:
 	);
 	virtual const Core::Buffer& ubuf() const;
 };
+// chess H4: a weight-stationary systolic array (rows x cols PEs, reduction on the rows, output channels on the columns) with a weight
+// FIFO four tiles deep, 32-bit accumulators, a weight and an input register per PE, and the type's L2 as its unified buffer.
+class SystolicCore : public Core {
+public:
+	const std::uint16_t rows, cols;
+	const energy_t MacCost;
+	const Buffer ub, fifo, acc, reg;
+	SystolicCore(std::uint16_t _rows, std::uint16_t _cols, energy_t _MacCost, const Buffer& _ub, const Buffer& _fifo, const Buffer& _acc,
+	             const Buffer& _reg, numMac_t _LR_mac_num, energy_t _LR_mac_cost);
+	virtual const Buffer& ubuf() const;
+};
+// chess H4: a vector/SFU engine: `lanes` FP16 lanes and the type's L2; it runs no contraction.
+class VectorCore : public Core {
+public:
+	const Buffer ub;
+	VectorCore(numMac_t _lanes, const Buffer& _ub, energy_t _LR_mac_cost);
+	virtual const Buffer& ubuf() const;
+};
 #endif // CORE_H

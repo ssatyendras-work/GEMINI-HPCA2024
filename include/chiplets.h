@@ -46,7 +46,7 @@ std::vector<double> buffer(int width, vol_t size);
 
 struct ChipletType {
 	int idx = 0;
-	int mm = 0;                   // 0: PolarCore (NVDLA style), 1: EyerissCore
+	int mm = 0;                   // 0: PolarCore (NVDLA style), 1: EyerissCore, 2: SystolicCore, 3: VectorCore (chess H4)
 	std::uint16_t mac_dim = 512;  // Polar: MACs per core (512, 1024, 2048, 4096, 8192); Eyeriss: array side, as upstream
 	vol_t ul3 = 0;                // L2 bytes
 	Technology tech;              // node terms

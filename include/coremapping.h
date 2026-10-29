@@ -200,6 +200,24 @@ public:
 	virtual vol_t get_ubuf_size() const override;
 	// virtual ~EyerissMapper() override = default;
 };
+// chess H4: the systolic array's mapper, SCALE-Sim's weight-stationary model (Samajdar et al., ISPASS 2020). Each fold of the reduction
+// C*R*S onto the rows and of the output channels onto the columns loads its weights (rows cycles), fills and drains the array
+// (rows + cols - 2 cycles) and streams the B*H*W output pixels. chess's port (chess.system.core.mapper.SystolicMapper) is line for line.
+class SystolicMapper : public CoreMapper {
+	const SystolicCore& core;
+public:
+	SystolicMapper(const SystolicCore& _core);
+	virtual CoreMapping genMapping(const ConvWl& wl) override;
+	virtual vol_t get_ubuf_size() const override;
+};
+// chess H4: the vector engine maps no contraction (an invalid mapping); other layers run on its lanes (CoreMapper::genLayerMap).
+class VectorMapper : public CoreMapper {
+	const VectorCore& core;
+public:
+	VectorMapper(const VectorCore& _core);
+	virtual CoreMapping genMapping(const ConvWl& wl) override;
+	virtual vol_t get_ubuf_size() const override;
+};
 #endif // COREMAPPING_H
 
 

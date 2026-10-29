@@ -769,6 +769,7 @@ int main(int argc, char** argv){
 	}
 	// assert(total_tops == 2*xx*yy*_mac_dim*_mac_dim);
 	//mm means core_microarch: 0 means PolarCore (NVDLA-STYLE), which is recommenmanded; 1 means Eyeriss Core.
+	// chess H4: 2 a weight-stationary systolic array, 3 a vector/SFU engine (no contractions).
 	//nn means network choice
 	//xx & yy means the number of cores in the x and y axis, respectively. Default noc topology is mesh.
 	//ss means stride, whose definition can be found in ISCA2023 SET, HPCA2024GEMINI, ASPLOS2019TANGRAM.
@@ -1092,7 +1093,8 @@ int main(int argc, char** argv){
 	`stschedule` tool prints input parameters, search time, tree info and cost info.
 	These output info are directly writed to the `stdout`. Redirect `stdout` if needed.
  */	
-	cout << "Mapper " << (chiplets.type(0).mm == 0 ? "polar" : "eyeriss");
+	static const char* mapper_names[] = {"polar", "eyeriss", "systolic", "vector"};  // chess H4: by the first type's core
+	cout << "Mapper " << mapper_names[chiplets.type(0).mm];
 	cout << " Network " << net_name;
 	cout << " Mesh " << (int)Cluster::xlen << '*' << (int)Cluster::ylen;
 	cout << " Batch " << tot_batch << endl;

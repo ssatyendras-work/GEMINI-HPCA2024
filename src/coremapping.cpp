@@ -111,6 +111,52 @@ vol_t EyerissMapper::get_ubuf_size() const{
 	return core.ul2.Size;
 }
 
+// Codes for SystolicMapper and VectorMapper (chess H4)
+
+SystolicMapper::SystolicMapper(const SystolicCore& _core)
+	: CoreMapper(_core), core(_core) {}
+
+CoreMapper::CoreMapping SystolicMapper::genMapping(const ConvWl& wl){
+	// 64-bit counts, converted to double where chess's port multiplies an integer by an energy, in the same order.
+	access_t kr = static_cast<access_t>(wl.C) * wl.R * wl.S;
+	access_t v = static_cast<access_t>(wl.B) * wl.H * wl.W;
+	access_t K = wl.K, G = wl.nGroup, rows = core.rows, cols = core.cols;
+	access_t fr = DIVCEIL(kr, rows), fc = DIVCEIL(K, cols);
+	access_t folds = fr * fc * G;
+	cycle_t time = folds * (2 * rows + cols + v - 2);
+	access_t macs = kr * K * v * G;
+	energy_t mac = macs * core.MacCost;
+	energy_t ubuf = (v * kr * fc + kr * K) * G * core.ub.RCost + v * K * G * core.ub.WCost;
+	energy_t fifo = kr * K * G * (core.fifo.WCost + core.fifo.RCost);
+	energy_t acc = v * K * G * fr * 4 * (core.acc.RCost + core.acc.WCost);
+	energy_t reg = folds * v * rows * cols * (core.reg.RCost + core.reg.WCost) + folds * rows * cols * core.reg.WCost + macs * core.reg.RCost;
+	CoreMapping m{};
+	m.cost = MapCost(mac + ubuf + fifo + acc + reg, time);
+	m.ubuf = ubuf;
+	m.buffer = fifo + acc + reg;
+	m.noc = 0;
+	m.mac = mac;
+	m.util = static_cast<double>(macs);
+	m.util /= static_cast<double>(time * core.mac_num);
+	m.tot_util = m.util;
+	return m;
+}
+
+vol_t SystolicMapper::get_ubuf_size() const{
+	return core.ub.Size;
+}
+
+VectorMapper::VectorMapper(const VectorCore& _core)
+	: CoreMapper(_core), core(_core) {}
+
+CoreMapper::CoreMapping VectorMapper::genMapping(const ConvWl&){
+	return CoreMapping{};  // invalid: the engine declares no contraction
+}
+
+vol_t VectorMapper::get_ubuf_size() const{
+	return core.ub.Size;
+}
+
 // Codes for main search:
 
 CoreMapper::CoreMapping CoreMapper::genLayerMap(const Layer& layer, const PartSch& part, const FetchSch& fetch, len_t batch_size, bool wgtB){
