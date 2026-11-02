@@ -1,5 +1,6 @@
 #include "technology.h"
 #include "chiplets.h"
+#include "served.h"
 #include <iostream>
 #include <fstream>
 #include "schnode.h"
@@ -815,6 +816,11 @@ int main(int argc, char** argv){
 
 	// chess H3: one core type, mapper and technology per chiplet type; upstream's package when no map is given
 	ChipletMap chiplets = chiplet_path.empty() ? ChipletMap::homogeneous(mm, mac_dim, ul3_, T) : ChipletMap::load(chiplet_path, T);
+	// chess/main (L7, H-E5): with GEMINI_CORE_SERVER set, a model outside Gemini prices every type's shares (served.h)
+	std::unique_ptr<CoreServer> core_server = CoreServer::from_env();
+	if (core_server) {
+		for (ChipletType& t : chiplets.types) t.mapper = std::make_unique<ServedMapper>(std::move(t.mapper), t.idx, *core_server);
+	}
 	SchNode::chiplets = &chiplets;
 	NoC::chiplets = &chiplets;
 	SchNode::frequency = chiplets.frequency_ghz();  // the reference clock: the interconnect's, and the unit of the result's time (the base technology's by default)
@@ -1157,6 +1163,7 @@ int main(int argc, char** argv){
 		output(3);
 		delete scheme;
 	}
+	if (core_server) core_server->report();
 
 #if FORMAT_OUTPUT
 	fclose(file);
