@@ -9,7 +9,7 @@
 
 #define FOR_BITSET(var, set) for(Bitset::bitlen_t var = set.first(); var != set.max_size(); var = set.next(var))
 
-#define MAX_BITS_IN_BS 640
+#define MAX_BITS_IN_BS 4096  // chess/main (W10): upstream 640, too few for a whole Llama 3 70B (1,362 layers) or BERT-large (1,059); layer ids are 16 bits
 
 class Bitset: private std::bitset<MAX_BITS_IN_BS>{
 public:
