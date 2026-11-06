@@ -1006,46 +1006,54 @@ Segment_scheme* DP_search(int iter_num, bool base,bool fast_mode) {
     std::vector<SchNode::SchCost> dp_cost(layer_num);
     SchNode::SchCost cur_cost;
 
+    // chess/main (G-50): `reached[i]`: some scheme covers [0, i]. Upstream gives up when a layer is no valid segment alone, taking the cause to be a buffer
+    // overflow; a layer too small to fill its cores (3 output channels at 1 x 1 on 4 cores) is invalid alone too and fits in a longer segment that shares
+    // them. Where every layer is valid alone this is upstream's DP decision for decision; otherwise the longer segments ending at the layer are tried, and a
+    // row no scheme reaches is passed over.
+    std::vector<bool> reached(layer_num, false);
+    SchNode::SchCost one_cost;
     for (auto i = 0; i < layer_num; ++i) {
         // Search the best segment scheme ended with i-th layer.
-        dp_batch[i] = iter->search_best_batch(i, i, dp_cost[i], fast_mode);
-        // If a segment with only one layer is invalid, there would be no feasible segment.
-        // assert(dp_batch[i] != 0);
-        if (dp_batch[i] == 0) {
+        len_t one = iter->search_best_batch(i, i, one_cost, fast_mode);
+        bool fits = one != 0;  // a segment ending at i is valid, reached from the start or not
+        dp_batch[i] = 0;
+        if (one == 0) {
             std::cout << "dp_batch[i] is zero. layer " << i << " " << network->getNode(i).name() << std::endl;  // chess/main (E8): which layer fits at no batch
-            return nullptr;
+        } else if (i == 0 || reached[i-1]) {
+            dp_batch[i] = one;
+            dp_cost[i] = one_cost;
+            // Copy border (`border` has been modified according to the segment scheme in `search_best_batch`).
+            dp_border[i] = iter->border;
+            if (i != 0) {
+                dp_border[i] |= dp_border[i-1];
+                dp_cost[i] += dp_cost[i-1];
+            }
+            reached[i] = true;
         }
-        // Copy border (`border` has been modified according to the segment scheme in `search_best_batch`).
-        dp_border[i] = iter->border;
-        // When `i == 0`, there is only first layer in the segment.
-        if (i == 0) continue;
-        dp_border[i] |= dp_border[i-1];
-        dp_cost[i] += dp_cost[i-1];
 
         for (auto j = i-1; j >= 0; --j) {
             // `j` is the first layer_id of the last segment [j, i].
             current_batch = iter->search_best_batch(j, i, cur_cost, fast_mode);
             if (current_batch == 0) {
-#ifdef DEBUG
-                // No valid batch size.
-                // Assert that this is a consequence of buffer overflow.
-                // Thus there is no need to add more layers into the current segment.
-                DEBUG_INFO("There are too many layers a segment.");
-#endif
-                break;
+                // No valid batch size. Upstream: a consequence of buffer overflow, so no more layers are added to the segment, once one ending at i is valid.
+                if (fits) break;
+                continue;  // chess/main (G-50): the layer at i may be too small for its cores alone
             }
+            fits = true;
+            if (j != 0 && !reached[j-1]) continue;
             if (j != 0) {
                 // All layers are contained in more than one segments.
                 cur_cost += dp_cost[j-1];
             }
-            if (cur_cost.cost() < dp_cost[i].cost()) {
+            if (!reached[i] || cur_cost.cost() < dp_cost[i].cost()) {
                 dp_cost[i] = cur_cost;
                 dp_border[i] = iter->border;
                 if (j != 0) dp_border[i] |= dp_border[j-1];
                 dp_batch[i] = current_batch;
+                reached[i] = true;
             }
         }
-        if (dp_batch[i] == 0) {
+        if (i == layer_num - 1 && !reached[i]) {
             return nullptr;
         }
     }
